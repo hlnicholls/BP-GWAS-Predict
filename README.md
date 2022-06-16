@@ -29,7 +29,7 @@ Gene annotation was applied in unix using ```bedtools``` and ```ANNOVAR```. Inst
 
 ## Step-by-step Pipeline Guide
 
-![Flowchart]()
+![overview](https://user-images.githubusercontent.com/53306752/174135239-da7c48e5-67d4-4f3a-8cc1-a227465353e2.png)
 
 **Overview of the Machine Learning Framework** 
 
