@@ -1,0 +1,1548 @@
+---
+title: "Data Preprocessing"
+author: "Hannah L Nicholls"
+date: "2021-07-18"
+output: rmarkdown::github_document
+---
+## Contents
+[1. Filtering insignificant variants](#1. Filtering insignificant variants)<br />
+[2. GWAS variant p-value filtering](#2. GWAS variant p-value filtering)<br />
+[3. GWAS variant data filtering](#2. GWAS variant data filtering)<br />
+[4. Protein-protein interaction filtering](#3. Protein-protein interaction filtering)<br />
+[5. Variant-level feature processing](#4. Variant-level feature processing)<br />
+[6. Feature pre-procesing](#5. Feature pre-procesing)<br />
+[7. Merging databases and dividing training data](#6. Merging databases and dividing training data)<br />
+[8. Gene length correlation](#8. Gene length correlation)<br />
+[9. SessionInfo](#9. SessionInfo)
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE,message=FALSE, fig.height=8)
+```
+
+## Necessary Libraries
+```{r libraries}
+library(stringr)
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(data.table)
+library(janitor)
+library(sqldf)
+library(tidyr)
+library(splitstackshape)
+library(matrixStats) 
+library(GenomicRanges)
+options(scipen=999)
+memory.limit(size=56000)
+```
+
+## <a id="1. Filtering insignificant variants"></a>1. Filtering insignificant variants
+- Insignificant variants defined as having a p-value >0.15, no linkage disquilibrium r2 measures, and are not within 500kb +/- blood pressure loci
+- Insignificant variants once identified and annotated to genes later go further filtering by protein-protein interactions (point 3.)
+- All variants from the whole GWAS are also taken in this first section to be annotated in unix scripts (providing gene annotations per variants and ANNOVAR pathogenic variant annotations)
+
+### BP associated variants across all GWAS as of April 2020:
+
+- Includes Evangelou et al. variants and enables identification of newer associated variants to avoid them being identified as insignificant variants
+
+```{r Load whole GWAS data, echo=c(-1)}
+setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/Data Preprocessing")
+
+#Selecting non-BP loci variants only
+
+#Read in signficant gwas variants file
+cp_bp <- fread("KnownBP_Apr2020_LDr2-8_500kb_gwasRes.txt", fill = TRUE)
+head(cp_bp)
+```
+
+### Whole GWAS data:
+
+```{r Load BP GWAS data, echo=c(-1)}
+full_gwas <- fread("gwasresults750k_minP_meanBETA.csv", sep = ",")
+head(full_gwas)
+```
+
+
+### Identifying insignificant variants
+
+Identifying variants not present in the BP associated variants file:
+
+```{r Identifying insignificant variants}
+full_gwas$CP <- paste(full_gwas$chr, full_gwas$bpos, sep = ":")
+fwrite(full_gwas, "whole-gwas-variants.txt")
+
+CP_matches <- cp_bp[CP %in% full_gwas$CP]
+
+#Find insignificant variants (variants/rows not present in significant variant file)
+mismatch_extract <- subset(full_gwas, !(CP %in% cp_bp$CP))
+fwrite(mismatch_extract, "mismatched-genes.csv")
+```
+
+Filtering by p-value >0.15 and by variants not within 500kb+/- of blood pressure loci:
+
+```{r Filtering insignificant variants1}
+
+#Filtering again by only variants not 500kb +/- sentinel SNPs:
+
+#Idenitfy lead SNPs in significant variants file
+sentinels <- filter(cp_bp, Type == "Lead")
+
+#Select relevant columns and rename to match insignificant variants column names
+sentinels <- select(sentinels, CP, CHR, POS)
+colnames(sentinels)[2] <- "chrom"
+colnames(sentinels)[3] <- "position"
+colnames(mismatch_extract)[2] <- "chrom"
+colnames(mismatch_extract)[3] <- "position"
+sentinels$chrom <-  as.numeric(sentinels$chrom)
+sentinels <- data.table(sentinels)
+mismatch_extract$chrom <-  as.numeric(mismatch_extract$chrom)
+mismatch_extract <- data.table(mismatch_extract)
+
+#Create boundaries 500kb +/- from lead SNPs
+sentinels[, c("low", "high") := .(position - 500000, position  + 500000)]
+
+#Find matches on chrom, with position between low&high for insignificant variants
+mismatch_extract[sentinels, match := i.CP,
+     on = .(chrom, position > low, position < high)]
+
+#Discard all found matches and then drop the match-column
+df <- mismatch_extract[is.na(match)][, match := NULL][]
+
+#Output is only the insignificant variants not within 500kb+/- lead snps
+fwrite(df, "genes-filtered_featuredist5kb.csv")
+
+#Filtering with Giri Variants:
+#Repeats the same 500kb+/- filtering code as above for further sentinel SNP data
+
+dt2 <- fread("GiriGenes.csv")
+
+#Create boundaries 500kb +/- from lead SNPs
+dt2[, c("low", "high") := .(position - 500000, position  + 500000)]
+
+#Find matches on chromosome, with position between low&high for insignificant variants
+df[dt2, match := i.CP, on = .(chrom, position > low, position < high)]
+#Discard all found matches and then drop the match-column
+df <- df[is.na(match)][, match := NULL][]
+
+#Merge two filtering insignificant variant files by all columns, so merging other columns back in:
+
+dt <- merge(mismatch_extract, df)
+
+#Create End column for file to suit bedtools format
+dt$End <- dt$position
+fwrite(dt, "gwas_insignificant-variants_FD5kb.txt")
+```
+
+Filtering by removing any insignificant variants in linkage disequilibrum with associated blood pressure variants:
+
+```{r Filtering insignificant variants2}
+#Check if any insignificant variants have R2 - and remove:
+insign <- fread("gwas_insignificant-variants_FD5kb.txt")
+ld_1 <- fread("BP_Apr2020_ld_r2-1_500KB.txt")#all SNPs in ld with BP lead SNPs in ld 0.1 or greater r2
+ld_1$CP1 <- paste(ld_1$CHR_B, ld_1$BP_B, sep = ":")
+ld_1$CP2 <- paste(ld_1$CHR_A, ld_1$BP_A, sep = ":")
+ld_2 <- select(ld_1, CP1, R2)
+colnames(ld_2)[1] <- "CP"
+ld_3 <- select(ld_1, CP2, R2)
+colnames(ld_3)[1] <- "CP"
+ld <- rbind(ld_2, ld_3)
+
+CP_matches <- insign[CP %in% ld$CP]
+
+final_insignif <- subset(insign, !(CP %in% ld$CP))
+
+#Filtered file that next enters PPI filtering after gene annotation
+fwrite(final_insignif, "gwas_insignificant-variants-filtered.txt")
+```
+
+Writing file to enter unix annotation in bedtool and ANNOVAR:
+
+```{r Preparing variant file for gene annotation}
+
+#Merge new insignificant variants with BP loci file
+
+#Renaming columns to be accepted by bedotools and annovar
+dt <- select(dt, "chrom", "position", "End", "a1", "a2", "BETAsbp", "BETAdbp", "BETApp",  "minP", "minTRAIT", "BETAmean", "CP")
+colnames(dt)[3] <- "End"
+colnames(dt)[4] <- "Ref"
+colnames(dt)[5] <- "Alt"
+
+#Also renaming KnownBP_Apr2020_LDr2-8_500kb_gwasRes.txt (significant variants/BP loci file) to match
+bploci <- cp_bp
+colnames(bploci)[14] <- "Ref"
+colnames(bploci)[15] <- "Alt"
+
+#Creating new chr and start columns from CP
+dat <- setDT(bploci)[, tstrsplit(CP, "[:]", type.convert = TRUE)]
+colnames(dat)[1] <- "Chr"
+colnames(dat)[2] <- "Start"
+dat$End <- dat$Start
+#Adding chr and start columns back into dataset
+bploci <- cbind(bploci, dat)
+
+#Selecting only the columns needed for downstream processing
+bpdf <- select(bploci, "Chr", "Start", "End",  "Ref", "Alt", "BETAsbp", "BETAdbp", "BETApp", "minP", "minTRAIT", "BETAmean", "CP")
+
+#Combining with filtering insignificant variants data
+df$End <- df$position
+df <- select(df, "chrom", "position", "End",  "a1", "a2", "BETAsbp", "BETAdbp", "BETApp", "minP", "minTRAIT", "BETAmean", "CP")
+colnames(df)[1] <- "Chr"
+colnames(df)[2] <- "Start"
+colnames(df)[4] <- "Ref"
+colnames(df)[5] <- "Alt"
+
+#Combining the variants together into one dataset
+totaldata <- rbind(bpdf, df)
+
+#Arranging Chr to be ordered 1-22 to allow data to be accepted by bedtools:
+totaldata <- totaldata %>% arrange(Chr, Start)
+
+#Needs to be tab delimited format for bedtools:
+write.table(totaldata, file = "associated-and-insignificant-variants.txt", append = TRUE, sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
+#totaldata file enters unix scripts for gene annotation
+
+head(totaldata)
+```
+
+## Data pre-processing following bedtools and ANNOVAR annotation in bash scripts
+
+## <a id="2. GWAS variant p-value filtering"></a>2. GWAS variant p-value filtering
+- ANNOVAR variant feature filtering and selecting insigifnicant genes for PPI filtering:
+
+```{r pval filtering}
+
+df <- fread("Total_Genes_Annotated.ANN.hg19_multianno.txt", fill=TRUE)
+#Annovar puts its header into 2nd row, needing rows 1 and 2 combined
+tmp <- row_to_names(df, row_number = 1)
+tmp2 <- row_to_names(tmp[,200:213], row_number = 1)
+tmp <- tmp[-1, ]
+df <- cbind(tmp[,1:199], tmp2)#
+
+
+#Select ANNOVAR features from meta-predictors and features that do not use overlapping data:
+df <- select(df, Gene, CP, Feature.Source, Feature.Chr, Feature.Start,Feature.End, 
+            Feature.Type, Feature.Source, Feature.Dist, minP, BETAdbp, BETAsbp,
+            BETApp, BETAmean, minTRAIT, REVEL, MetaSVM_rankscore, MetaLR_rankscore, MCAP, wgEncodeBroadHmmHuvecHMM, EFIN_SP_score)
+
+df <- filter(df, !is.na(df$Gene))
+
+#Write to be used in feature processing of epigenetic features (needs both variants and genes)
+fwrite(df, "Variants_GenesAnnotated.txt", sep = "\t", row.names = FALSE)
+df <- fread("Variants_GenesAnnotated.txt")
+
+insignif <- fread("gwas_insignificant-variants-filtered.txt")
+
+CP_matches <- df[CP %in% insignif$CP]
+
+cp_bp <- fread("KnownBP_Apr2020_LDr2-8_500kb_gwasRes.txt", fill = TRUE)
+sentinels <- filter(cp_bp, Type == "Lead")
+
+#Select relevant columns and rename to match insignificant variants column names
+sentinels <- select(sentinels, CP, CHR, POS)
+colnames(sentinels)[2] <- "chr"
+colnames(CP_matches)[4] <- "chr"
+sentinels$chrom <-  as.numeric(sentinels$chrom)
+sentinels <- data.table(sentinels)
+CP_matches$chrom <-  as.numeric(CP_matches$chrom)
+CP_matches <- data.table(CP_matches)
+
+#Create boundaries 500kb +/- from lead SNPs
+sentinels[, c("low", "high") := .(POS - 500000, POS  + 500000)]
+
+#Find matches on chrom, with position between low&high for insignificant variants
+
+gr1 <- makeGRangesFromDataFrame(
+  data.frame(
+    chr=sentinels$chr,
+    start=sentinels$low,
+    end=sentinels$high),
+  keep.extra.columns=TRUE)
+
+gr2 <- makeGRangesFromDataFrame(
+  data.frame(
+    chr=CP_matches$chr,
+    start=CP_matches$Feature.Start,
+    end=CP_matches$Feature.End,
+    Gene = CP_matches$Gene),
+  keep.extra.columns=TRUE)
+
+no_overlaps <- gr2[-queryHits(findOverlaps(gr2, gr1, type="any")),] 
+
+no_overlap_genes <- unique(no_overlaps$Gene)
+
+matches <- df[Gene %in% no_overlap_genes]
+
+#Condense variants to genes:
+data <- setDT(matches)[, lapply(.SD, paste, collapse = ", "), by = Gene]
+
+data <- select(data, Gene, minP, CP)
+
+#Get min p-value per gene:
+get_range <- function(x) {
+  x <- type.convert(str_split(x, ",\\s+", simplify = TRUE), na.strings = c(".", "NA"))
+  x <- t(apply(x, 1L, function(i) {
+    i <- i[!is.na(i)]
+    if (length(i) < 1L) c(NA_real_, NA_real_) else range(i)
+  }))
+  dimnames(x)[[2L]] <- c("min", "max")
+  x
+}
+
+dt <- data[, c(Gene = .(Gene), lapply(.SD, get_range)), .SDcols = -"Gene"]
+
+dt <- select(dt, Gene, minP.min)
+
+dt2 <- dt
+
+pval = dt2[dt2$minP.min > 0.0000005]
+
+pval01 = dt2[dt2$minP.min > 0.1] #2013
+pval015 = dt2[dt2$minP.min > 0.15] #1366
+pval02 = dt2[dt2$minP.min > 0.2] #975
+pval025 = dt2[dt2$minP.min > 0.25] #738
+pval03 = dt2[dt2$minP.min > 0.3] #554
+pval035 = dt2[dt2$minP.min > 0.35] #421
+pval04 = dt2[dt2$minP.min > 0.4] #325
+pval045 = dt2[dt2$minP.min > 0.45] #260
+pval05 = dt2[dt2$minP.min > 0.5] #198
+pval055 = dt2[dt2$minP.min > 0.55] #141
+pval06 = dt2[dt2$minP.min > 0.6] #105
+pval065 = dt2[dt2$minP.min > 0.65] #75
+pval07 = dt2[dt2$minP.min > 0.7] #57
+pval075 = dt2[dt2$minP.min > 0.75] #37
+pval08 = dt2[dt2$minP.min > 0.8] #19
+pval085 = dt2[dt2$minP.min > 0.85] #9
+pval09 = dt2[dt2$minP.min > 0.9] #4
+
+fwrite(pval, 'pval_forPPI.txt', row.names = FALSE)
+fwrite(pval01, 'pval01_forPPI.txt', row.names = FALSE)
+fwrite(pval015, 'pval015_forPPI.txt', row.names = FALSE)
+fwrite(pval02, 'pval02_forPPI.txt', row.names = FALSE)
+fwrite(pval025, 'pval025_forPPI.txt', row.names = FALSE)
+fwrite(pval03, 'pval03_forPPI.txt', row.names = FALSE)
+fwrite(pval035, 'pval035_forPPI.txt', row.names = FALSE)
+fwrite(pval04, 'pval04_forPPI.txt', row.names = FALSE)
+fwrite(pval045, 'pval045_forPPI.txt', row.names = FALSE)
+fwrite(pval05, 'pval05_forPPI.txt', row.names = FALSE)
+fwrite(pval055, 'pval055_forPPI.txt', row.names = FALSE)
+fwrite(pval06, 'pval06_forPPI.txt', row.names = FALSE)
+fwrite(pval065, 'pval065_forPPI.txt', row.names = FALSE)
+fwrite(pval07, 'pval07_forPPI.txt', row.names = FALSE)
+fwrite(pval075, 'pval075_forPPI.txt', row.names = FALSE)
+fwrite(pval08, 'pval08_forPPI.txt', row.names = FALSE)
+fwrite(pval085, 'pval085_forPPI.txt', row.names = FALSE)
+fwrite(pval09, 'pval09_forPPI.txt', row.names = FALSE)
+```
+
+## <a id="3. GWAS variant data filtering"></a>3. GWAS variant data filtering
+- ANNOVAR variant feature filtering and selecting insigifnicant genes for PPI filtering:
+
+```{r GWAS variant data filtering}
+df <- fread("Variants_GenesAnnotated.txt")
+
+#Identify insignificant genes from variants
+insignif <-  fread('pval015_forPPI.txt')
+insignif$insignif <- 1
+insign_df <-  merge(df, insignif, by = 'Gene', all.y = TRUE)
+insign_df <- filter(insign_df, !is.na(insign_df$Gene))
+insign_df_genes <- setDT(insign_df)[, lapply(.SD, paste, collapse = ", "), by = Gene]
+insign_df_genes  <- insign_df_genes[!duplicated(insign_df_genes$Gene), ]
+#insignif column then used in further filtering by PPI later
+
+#Identify Evangelou et al. genes from whole GWAS variants
+evangelou <- fread('WholeDataFDLD08.csv')
+colnames(evangelou)[149] <-'Gene'
+evangelou  <- select(evangelou, CP, Gene, minP, BETAsbp, BETAdbp, BETApp, minTRAIT, Feature.Type)
+
+BPlocigenes <- df[Gene %in% evangelou$Gene]
+
+#Compress per variant-level features to their genes (variant values become comma separated values within one cell/row per gene)
+
+data <- setDT(BPlocigenes)[, lapply(.SD, paste, collapse = ", "), by = Gene]
+
+#Combine with insignificant genes
+data <- rbind(data, insign_df_genes, fill=TRUE)
+fwrite(data, 'Genes_evangel_and_insignif.txt', row.names = FALSE)
+
+#Identify gene list to undergo PPI filtering in later code
+dataforPPI <- select(data, Gene, insignif)
+fwrite(dataforPPI, 'Genelist_forPPI.txt', row.names = FALSE)
+
+```
+
+## <a id="4. Protein-protein interaction filtering"></a>4. Protein-protein interaction filtering
+
+```{r PPI filtering1,echo=c(-1)}
+rm(list = ls())
+
+gc()
+memory.limit(9999999999)
+
+#Match genes to string identifiers
+
+df <- fread("Variants_GenesAnnotated.txt")
+
+#Condense variants to genes:
+data <- setDT(df)[, lapply(.SD, paste, collapse = ", "), by = Gene]
+
+Genelist <- select(data, Gene)
+
+protein_alias <- fread('9606.protein.aliases.v11.0.txt')
+colnames(protein_alias)[1] <- 'protein_id'
+colnames(protein_alias)[2] <- 'Gene'
+protein_alias <- select(protein_alias, Gene, protein_id)
+protein_info <- fread('9606.protein.info.v11.0.txt')
+colnames(protein_info)[1] <- 'protein_id'
+colnames(protein_info)[2] <- 'Gene'
+protein_info <- select(protein_info, Gene, protein_id)
+PPIs <- rbind(protein_alias, protein_info)
+
+#Total data downloaded from string including all scores per interactions loaded:
+
+proteindf <- fread("9606.protein.links.full.v11.0.txt")
+dim(proteindf)
+names(proteindf)
+
+colnames(proteindf)[1] <- "STRING_id1"
+colnames(proteindf)[2] <- "STRING_id2"
+
+#Interaction scores only from coexpression, experiments and database used:
+protein_df <- select(proteindf, STRING_id1, STRING_id2, coexpression,
+                     experiments, database)
+protein_df <- filter(protein_df, experiments != 0 | coexpression !=0 | database !=0)
+protein_df$Max <- apply(protein_df[,3:5], 1, FUN = max)
+protein_df <- filter(protein_df, Max >= 400) 
+
+protein_df <- select(protein_df, STRING_id1, STRING_id2)
+```
+
+```{r PPI filtering2)}
+#Matching Gene and string identifiers to interactors 
+
+#Duplicating STRING_id to have renamed matching column STRING_id1 
+#(to match with named STRING_id1 interactors in protdf dataset, finding the gene names for those interactors)
+PPIs$STRING_id1 <- PPIs$protein_id
+PPIs$STRING_id2 <- PPIs$protein_id
+#Having both STRING_id1 and STRING_id means they will correspond to the same columns in protdf respectively
+
+mapped1 <- select(PPIs, STRING_id1, Gene)
+colnames(mapped1)[2]<- "Gene1"
+mapped1 <- unique(mapped1)
+string1_df <- merge(protein_df, mapped1, by='STRING_id1', all.x = TRUE, allow.cartesian=TRUE)
+string1_df  <- unique(string1_df)
+colnames(Genelist)[1] <- 'Gene1'
+string1_df_genes <- merge(string1_df, Genelist, by='Gene1', all.y = TRUE, allow.cartesian=TRUE)
+string1_df_genes <- unique(string1_df_genes)
+
+head(string1_df_genes)
+```
+
+```{r PPI filtering3}
+
+#Finding HGNC gene symbols for other STRING id column:
+mapped2 <- select(PPIs, STRING_id2, Gene)
+mapped2 <- unique(mapped2)
+string2_df <- merge(protein_df, mapped2, by='STRING_id2', all.x =TRUE, allow.cartesian=TRUE)
+string2_df <- unique(string2_df)
+colnames(Genelist)[1] <- 'Gene'
+string2_df_genes <- merge(string2_df, Genelist, by='Gene', all.y = TRUE, allow.cartesian=TRUE)
+string2_df_genes <- unique(string2_df_genes)
+
+all_string_IDs <- inner_join(string1_df_genes, string2_df_genes)
+all_string_IDs <- select(all_string_IDs, STRING_id1, Gene1, STRING_id2, Gene)
+
+colnames(all_string_IDs)[4] <- 'Gene2'
+all_string_IDs <- filter(all_string_IDs, !is.na(STRING_id1))
+
+#fwrite(all_string_IDs, 'all_STRING_IDs400.txt', row.names = FALSE)
+
+#Collapsing interactors to be listed per gene in each row
+#Each gene in Gene1 column needs condensing/collapsing to one unique gene per row in a column, with all that gene's interactors listed in another columnn
+#E.g. Genes in above output example needs to be condensed to 1 row with all Gene2 interactors listed for it 
+
+#Compress gene's interactors for first column:
+genes1 <- all_string_IDs[, c(2,4)]
+genes1 <- genes1[!(genes1$Gene1=="NA"), ]
+genes1 <- data.table(genes1)
+genes1 <- genes1[,lapply(.SD, function(col) paste(col, collapse =", ")), 
+                 by=.(Gene1)]
+genes1$Gene2 <- gsub("NA,", "", genes1$Gene2)
+
+head(genes1)
+```
+
+```{r PPI filtering4}
+
+#Compress gene's interactors for second column:
+genes2 <- all_string_IDs[, c(2,4)]
+genes2 <- genes2[!(genes2$Gene2=="NA"),]
+genes2 <- data.table(genes2)
+genes2 <- genes2[,lapply(.SD, function(col) paste(col, collapse = ", ")), 
+                 by=.(Gene2)]
+genes2$Gene1 <- gsub("NA,", "", genes2$Gene1)
+
+#Combine into one dataset:
+colnames(genes1)[1] <- "Gene"
+colnames(genes2)[1] <- "Gene"
+
+interactors_df <- merge(genes1, genes2, by='Gene', all=T)
+#Combine interactors from both gene1 and gene2 and remove duplicates:
+PPI_df  <- transform(interactors_df , interactors = paste(Gene1, Gene2, sep = ", "))
+PPI_df$interactors <- sapply(PPI_df$interactors , function(x) paste(unique(unlist(str_split(x,", "))), collapse = ", "))
+
+interactors <- select(PPI_df, Gene, interactors)
+
+fwrite(interactors, "PPI400_gene_interactions_evangelou.txt", sep="\t", row.names = F, quote = F)
+
+```
+
+### PPI filtering of insignificant genes by identifying genes with no close interactions with known blood pressure genes
+- Known blood pressure genes identified as such if they have interacting blood pressure drugs or mechanisms (provided in Genelist_drug_and_databases.txt file).
+- Genes with no direct PPIs with known blood pressures or no secondary PPIs (interactors interacting with known blood pressure gene interactors) selected as final geneset of least likely/insignificant blood pressure genes to be scored at 0.1 on machine learning regression classification.
+
+```{r PPI filtering5}
+rm(list = ls())
+
+Genelist <- fread("Genelist_forPPI.txt")
+interactors <- fread("PPI400_gene_interactions_evangelou.txt")
+drugdf <- fread("Genelist_drug_and_databases.txt")
+textminingdf <- fread('genie_textminingBP.txt')
+colnames(textminingdf)[3] <-'Gene'
+genes_to_label <- Reduce(function(x, y) merge(x, y, by = 'Gene', all.x = TRUE),
+                       list(Genelist, drugdf, textminingdf))
+genes_to_label <- select(genes_to_label, Gene, BPmed, Mechanism,
+                         SideeffectFreq, Rank, insignif)
+
+genes_to_label[, BP_templabel := fcase( 
+  Mechanism == 1 | BPmed >= 1 | SideeffectFreq > 1 | Rank >= 1, 'most likely', 
+  insignif == 1 , 'least likely', 
+  default = 'other')]
+
+bp_labels <- select(genes_to_label, Gene, BP_templabel)
+#Genes with BP drug or BP mechanism (known BP genes)
+ml_df <- filter(bp_labels, BP_templabel == "most likely")
+#Genes at BP loci with all variants > 0.8 LD
+bp_genes <- fread('Genes_BPloci.bed')
+colnames(bp_genes)[12] <-'CP'
+colnames(bp_genes)[16] <-'Gene'
+bp_genes$CP <- str_replace_all(bp_genes$CP, ',', ':')
+bp_total_loci <- fread('KnownBP_Apr2020_LDr2-8_500kb_gwasRes.txt')
+bp_genes2 <- merge(bp_genes, bp_total_loci, by='CP', all.x=TRUE)
+bp_genes2 <- filter(bp_genes2, !is.na(Type))
+bp_genes3 <- setDT(bp_genes2)[, lapply(.SD, paste, collapse = ", "), by = Gene]
+bp_genes3 <- select(bp_genes3, Gene)
+bp_genes3 <- select(bp_genes, Gene)
+
+ml_df <- rbind(ml_df, bp_genes3, fill=TRUE)
+ml_df[is.na(ml_df)] <- "most likely"
+ml_df <- ml_df[!duplicated(ml_df$Gene), ] #3,786 genes
+
+#Insignificant genes from GWAS (p-value, no LD, no within 500kb+/- bploci)
+ll_df <- filter(bp_labels, BP_templabel == "least likely") #10,471 genes
+
+bp_loci <- ml_df 
+bp_genes_PPI <- merge(bp_loci, interactors, by = 'Gene', all.x = TRUE)
+
+#Get secondary interactors:
+interactors_bp_PPI <- bp_genes_PPI %>% 
+  mutate(interactors = strsplit(as.character(interactors), ", ")) %>% 
+  unnest(interactors)
+interactors_bp_PPI <- select(interactors_bp_PPI, interactors)
+colnames(interactors_bp_PPI)[1] <- 'Gene'
+interactors_bp_PPI <- unique(interactors_bp_PPI)
+
+interactors_bp_PPI <- interactors_bp_PPI %>%
+  mutate_if(is.character, trimws)
+
+secondary_bp_PPI <- merge(interactors_bp_PPI, interactors, by = 'Gene', all.x = TRUE)
+
+#Directly connected PPIs with known BP genes (matched_direct_interactor column)
+#Least likely genes that interact with a known BP gene
+ll_df$matched_direct_interactor <-  ll_df$Gene %in% unlist(strsplit
+                                        (bp_genes_PPI$interactors,", "))
+
+ll_df$matched_secondary_interactor <- ll_df$Gene %in% unlist(strsplit
+                                          (secondary_bp_PPI$interactors, ", "))
+
+string_ids <- fread('9606.protein.info.v11.0.txt')
+colnames(string_ids)[2] <- 'Gene'
+ll_matches <- ll_df[Gene %in% string_ids$Gene]
+
+#Select insignificant genes with no direct or secondary BP gene interactors
+
+bp_false_interactions1 <- filter(ll_df, matched_direct_interactor == "FALSE")
+bp_false_interactions2 <- filter(ll_df, matched_direct_interactor == "FALSE"
+                                  & matched_secondary_interactor == "FALSE") 
+
+ll_matches1 <- bp_false_interactions1[Gene %in% ll_matches$Gene]
+ll_matches2 <- bp_false_interactions2[Gene %in% ll_matches$Gene]
+
+bp_true_interactions1 <- filter(ll_df, matched_direct_interactor == "TRUE") 
+bp_true_interactions2 <- filter(ll_df, matched_secondary_interactor == "TRUE") 
+
+#read in genes with >0.1 r2 with BP loci to ensure genes are filtered:
+ld_genes <- fread('LD01_genes.txt')
+no_ld_genes <- subset(bp_false_interactions2, !(Gene %in% ld_genes$Gene))
+
+write.table(no_ld_genes,"pval07_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
+
+```
+
+## <a id="5. Variant-level feature processing"></a>5. Variant-level feature processing
+
+- Min or max value per gene for each variant feature selected with min/max depending on feature significance direction
+
+```{r Variant-level features, echo=c(-1)}
+rm(list = ls())
+
+df <- fread('Genes_evangel_and_insignif.txt')
+ppifiltered1 <- fread('pval07_filtered_unassociated_genes.txt')
+
+df$insignif[df$insignif==""] <- NA
+df1 <- filter(df, is.na(insignif))
+df2 <- filter(df, insignif == 1)
+df2 <- df2[Gene %in% ppifiltered1$Gene]
+df2 <- df2[!duplicated(df2$Gene), ]
+
+data <- rbind(df1, df2)
+data <- data[!duplicated(data$Gene), ]
+
+#Select min or max value for each feature per gene between compressed values
+
+get_range <- function(x) {
+  x <- type.convert(str_split(x, ",\\s+", simplify = TRUE), na.strings = c(".", "NA"))
+  x <- t(apply(x, 1L, function(i) {
+    i <- i[!is.na(i)]
+    if (length(i) < 1L) c(NA_real_, NA_real_) else range(i)
+  }))
+  dimnames(x)[[2L]] <- c("min", "max")
+  x
+}
+
+dt <- data[, c(Gene = .(Gene), lapply(.SD, get_range)), .SDcols = -"Gene"]
+
+
+dt <- subset(dt, select=-c(wgEncodeBroadHmmHuvecHMM.min, wgEncodeBroadHmmHuvecHMM.max,
+                             MetaSVM_rankscore.min, MetaLR_rankscore.min,
+                             MCAP.min, REVEL.min, EFIN_SP_score.max, minP.max,
+                            minTRAIT.min, minTRAIT.max, BETAmean.min,BETAmean.max,
+                           BETAdbp.min, BETAdbp.max, BETApp.min, BETApp.max, BETAsbp.min, BETAsbp.max,
+                           CP.min,CP.max, minP.max, minP.min, Feature.Dist.max,
+                           Feature.Dist.min, Feature.Type.max, Feature.Type.min,
+                           Feature.End.min, Feature.Start.max, Feature.Start.min,
+                           Feature.Chr.max, Feature.Source.min, Feature.End.max,
+                           Feature.Source.max, Feature.Chr.min, insignif.min, insignif.max,
+                           CP.min, CP.max
+                           ))
+
+dt2 <- select(data, Gene, wgEncodeBroadHmmHuvecHMM)
+
+dat <- select(data, Gene, BETAsbp, BETAdbp, BETApp, BETAmean)
+dat <- dat[!duplicated(dat$Gene),]
+
+#Columns most columns need maximum value per gene select.
+#Columns in between and not selected either need text removal first or no selection performed (minTRAIT column)
+
+#For columns with text, remove text or convert to numeric values to select between values per gene/row
+
+dt2$wgEncodeBroadHmmHuvecHMM <- gsub("[A-Z]|[a-z]|[=]|\\s|_|/", "", dt2$wgEncodeBroadHmmHuvecHMM)
+
+dt2 <- dt2 %>% 
+  tidyr::separate_rows(wgEncodeBroadHmmHuvecHMM, sep = ",", convert = TRUE) %>%
+  dplyr::group_by(Gene) %>% 
+  dplyr::mutate(wgEncodeBroadHmmHuvecHMM.count = n()) %>% 
+  dplyr::slice(1) %>% 
+  ungroup(Gene)
+
+dt2_wg <- select(dt2, wgEncodeBroadHmmHuvecHMM.count)
+dt1 <- cbind(dt, dt2_wg)
+
+
+#Select the maximum absolute value between all beta phenotypes per gene:
+
+#Select maximum absolute beta value per gene (between sbp, dbp, and pp)
+#Selecting one phenotype at a time then combining columns:
+#betadbp:
+dat2 <- select(dat, Gene, BETAdbp)%>%
+  tidyr::separate_rows(BETAdbp, sep = ",", convert = TRUE)
+
+dat2$BETAdbp <- as.numeric(dat2$BETAdbp)
+dat2 <- dat2 %>% 
+  group_by(Gene) %>%
+  summarise(Negatives1 = +(min(BETAdbp, na.rm = TRUE) == -max(abs(BETAdbp), na.rm = TRUE)),
+            BETAdbp = max(abs(BETAdbp), na.rm = TRUE))
+
+#Replace infinite values with NA
+dat2 <- do.call(data.frame,lapply(dat2, function(x) replace(x, is.infinite(x),NA)))
+
+#Repeat for BETApp, BETAsbp, and BETAmean
+#BETApp:
+dat3 <- select(dat, Gene, BETApp)%>%
+  tidyr::separate_rows(BETApp, sep = ",", convert = TRUE)
+
+dat3$BETApp <- as.numeric(dat3$BETApp)
+dat3 <- dat3 %>% 
+  group_by(Gene) %>%
+  summarise(Negatives2 = +(min(BETApp, na.rm = TRUE) == -max(abs(BETApp), na.rm = TRUE)),
+            BETApp = max(abs(BETApp), na.rm = TRUE))
+
+dat3 <- do.call(data.frame,lapply(dat3, function(x) replace(x, is.infinite(x),NA)))
+
+#BETAsbp:
+dat4 <- select(dat, Gene, BETAsbp)%>%
+  tidyr::separate_rows(BETAsbp, sep = ",", convert = TRUE)
+
+dat4$BETAsbp <- as.numeric(dat4$BETAsbp)
+dat4 <- dat4 %>% 
+  group_by(Gene) %>%
+  summarise(Negatives3 = +(min(BETAsbp, na.rm = TRUE) == -max(abs(BETAsbp), na.rm = TRUE)),
+            BETAsbp = max(abs(BETAsbp), na.rm = TRUE))
+
+dat4 <- do.call(data.frame,lapply(dat4, function(x) replace(x, is.infinite(x),NA)))
+
+#Add created beta columns into df datframe and then removing duplicate named columns:
+df <- cbind(dat, dat2[,2:3], dat3[,2:3], dat4[,2:3])
+df <- subset(df, select = -c(BETAdbp, BETAsbp,BETApp, BETAmean))
+
+#Return negative beta values to those which were negative per phenotype
+df <- df %>%
+  mutate(BETAdbp = ifelse(Negatives1, -BETAdbp, BETAdbp))
+df <- df %>%
+  mutate(BETApp = ifelse(Negatives2, -BETApp, BETApp))
+df <- df %>%
+  mutate(BETAsbp = ifelse(Negatives3, -BETAsbp, BETAsbp))
+
+#Selecting only the 3 phenotype beta value columns for selecting the maximum absolute value between them:
+df1sel <- df[,c(3, 5, 7)]
+dat_df <- tibble::as_tibble(df1sel)
+
+#Function to select maximum absolute value rowwise out of the 3 phenotypes:
+f <- function(data) {
+  tmp <- Filter(is.numeric, data)
+  if(inherits(data, "tbl_df")) {
+    tmp <- as.matrix(tmp)
+  }
+  tmp[cbind(1:nrow(tmp),
+            max.col(replace(x <- abs(tmp), is.na(x), -Inf)))]
+}
+
+#Performing the f function to select the maximum absolute value into a new 'betamax' column
+df1_beta_selected2 <- f(dat_df)
+df1_beta_selected2 <- as.list(df1_beta_selected2)
+df_beta <- data.frame(matrix(unlist(df1_beta_selected2), nrow=length(df1_beta_selected2), byrow = T))
+colnames(df_beta)[1] <- 'betamax'
+#Adding betamax column into main dataset:
+df_new <- cbind(dt1, df_beta)
+df_new <- unique(df_new)
+#Drop any columns missing all values
+df_all_features <- df_new %>% select_if(~!all(is.na(.)))
+
+insignif <- select(data, Gene, insignif)
+df_all_features <- merge(df_all_features, insignif, all.x = TRUE)
+#Write final file:
+fwrite(df_all_features, "pval07_genelist_filtered_evangelou.txt", 
+       sep = "\t", row.names = FALSE)
+
+head(df_all_features)
+```
+
+## <a id="6. Feature pre-procesing"></a>6. Feature pre-procesing
+
+
+### IPA blood pressure gene curation:
+```{r IPA, echo=c(-1)}
+rm(list = ls())
+df1 <- fread('CVD-BP-IPA.txt')
+colnames(df1)[1] <-'Gene'
+colnames(df1)[3] <-'Activity_BP_IPA'
+df1 <- select(df1, Gene, Activity_BP_IPA)
+df1 <- unique(df1)
+df2 <- fread('familial-HTN-IPA.txt')
+colnames(df2)[1] <-'Gene'
+colnames(df2)[3] <-'Activity_FamilialBP_IPA'
+df2 <- select(df2, Gene, Activity_FamilialBP_IPA)
+df2 <- unique(df2)
+df3 <- fread('DBP-IPA.txt')
+colnames(df3)[1] <-'Gene'
+colnames(df3)[3] <-'Activity_DBP_IPA'
+df3 <- select(df3, Gene, Activity_DBP_IPA)
+df3 <- unique(df3)
+df4 <- fread('SBP-IPA.txt')
+colnames(df4)[1] <-'Gene'
+colnames(df4)[3] <-'Activity_SBP_IPA'
+df4 <- select(df4, Gene, Activity_SBP_IPA)
+df4 <- unique(df4)
+df5 <- fread('BP-disorder-IPA.txt')
+colnames(df5)[3] <-'Activity_BPdisorder_IPA'
+colnames(df5)[1] <-'Gene'
+df5 <- select(df5, Gene, Activity_BPdisorder_IPA)
+df5 <- unique(df5)
+
+df6 <- fread('IPA-Pressure.txt')
+colnames(df6)[4] <-'Gene'
+df6 <- select(df6, Gene)
+df6 <- separate_rows(df6, Gene, sep = ",")
+df6 <- unique(df6)
+df6$IPA_Pressure <- 1
+
+df7 <- fread('maternal-HTN-IPA.txt')
+colnames(df7)[4] <-'Gene'
+df7 <- select(df7, Gene)
+df7 <- separate_rows(df7, Gene, sep = ",")
+df7 <- unique(df7)
+df7$IPA_Matneral <- 1
+
+df8 <- fread('MAP-IPA.txt')
+colnames(df8)[4] <-'Gene'
+df8 <- select(df8, Gene)
+df8 <- separate_rows(df8, Gene, sep = ",")
+df8 <- unique(df8)
+df8$MAP_IPA <- 1
+
+df9 <- fread('PP-IPA.txt')
+colnames(df9)[4] <-'Gene'
+df9 <- select(df9, Gene)
+df9 <- separate_rows(df9, Gene, sep = ",")
+df9 <- unique(df9)
+df9$PP_IPA <- 1
+
+
+merged <- Reduce(function(x, y) merge(x, y,by='Gene', all=TRUE), list(df1,df2, df3, df4, df5, df6, df7, df8, df9))
+
+### Getting gene's presence in IPA under BP terms
+merged <- merged[,1]
+merged$IPA_BP <- 1 
+
+genes <- fread('Variants_GenesAnnotated.txt')
+genes <- select(genes, Gene)
+genes <- unique(genes)
+df <- merge(genes, merged, by='Gene', all.x=TRUE)
+
+
+#### Getting gene's activity in BP (increase or decrease)
+levels( factor(df1$Activity_BP_IPA) )
+#"[decreased activity, increased activity]"                        
+#[2] "[decreased activity, unknown change in activity]"                
+#[3] "[increased activity, unknown change in activity]"                
+#[4] "decreased activity"                                              
+#[5] "decreased activity,increased activity"                           
+#[6] "decreased activity,increased activity,unknown change in activity"
+#[7] "decreased activity,unknown change in activity"                   
+#[8] "increased activity"                                              
+#[9] "increased activity,unknown change in activity"                   
+#[10] "unknown change in activity"  
+
+filt1 <-filter(df1, Activity_BP_IPA=='decreased activity,increased activity')
+filt2 <-filter(df1, Activity_BP_IPA=='decreased activity,increased activity,unknown change in activity')
+#filt3 <-filter(df1, Activity_BP_IPA=='unknown change in activity')
+
+df1_2 <-subset(df1, !(Gene %in% filt1$Gene)) 
+df1_2 <-subset(df1_2, !(Gene %in% filt2$Gene)) 
+#df1_2 <-subset(df1_2, !(Gene %in% filt3$Gene)) 
+
+levels( factor(df1_2$Activity_BP_IPA) )
+
+filter1 <- filter(df1_2, Activity_BP_IPA=='decreased activity')
+filter1$IPA_Activity <- 1
+filter2 <- filter(df1_2, Activity_BP_IPA=='increased activity')
+filter2$IPA_Activity <- 2
+df1_final <- rbind(filter1, filter2)
+
+final <- merge(df, df1_final, by='Gene', all.x=TRUE)
+final$IPA_BP[is.na(final$IPA_BP)] <- 0
+final$IPA_Activity[is.na(final$IPA_Activity)] <- 0
+final <- select(final, Gene, IPA_BP, IPA_Activity)
+fwrite(final, 'IPA_activity.txt', row.names=FALSE)
+
+```
+
+
+### PanglaoDB cell-type ubiquitous index:
+```{r Panglaodb, echo=c(-1)}
+rm(list = ls())
+df <- fread('PanglaoDB_markers.txt')
+
+get_range <- function(x) {
+  x <- type.convert(str_split(x, ",\\s+", simplify = TRUE), na.strings = c(".", "NA"))
+  x <- t(apply(x, 1L, function(i) {
+    i <- i[!is.na(i)]
+    if (length(i) < 1L) c(NA_real_, NA_real_) else range(i)
+  }))
+  dimnames(x)[[2L]] <- c("min", "max")
+  x
+}
+
+dt <- df[, c(Gene = .(Gene), lapply(.SD, get_range)), .SDcols = -"Gene"]
+
+dt <- select(dt, Gene, ubiquitousness.index.max)
+dt <- unique(dt)
+
+fwrite(dt, 'panglaodb_cells_highestscores.txt', row.names=FALSE)
+```
+
+### CpG Island counts per gene from UCSC data:
+
+```{r CpG, echo=c(-1)}
+rm(list = ls())
+
+#Read in Variant file including gene names from GWAS variant filtering code:
+file1 <- fread("Variants_GenesAnnotated.txt")
+file1 <- select(file1, Gene, Feature.Chr, Feature.Start, Feature.End)
+colnames(file1)[2] <- "Chromosome"
+colnames(file1)[3] <- "Start"
+colnames(file1)[4] <- "End"
+file1$Position <- file1$Start
+
+#Read in gene length form hg19 ref file (used in bedtools step):
+#Gene length as originally going to be used for correlation but was removed to be used a ML feature instead
+#genelength <- fread("GeneLength.txt")
+
+file2<-fread("cpgIslandExt.txt")
+colnames(file2)[2] <- "Chromosome"
+colnames(file2)[3] <- "Start"
+colnames(file2)[4] <- "End"
+file2$count <- 1
+file2$Chromosome <- gsub('chr', '', file2$Chromosome)
+file1$Chromosome <- as.integer(file1$Chromosome)
+file2$Chromosome <- as.integer(file2$Chromosome)
+
+#Match CpG Chr Start and End to those in file1:
+df <- file1[,.(Chromosome,Position,Start, End, Gene)][file2,
+                                                .(Chromosome,Position=x.Position, Start, End,Gene,count),
+                                                on=.(Chromosome,Position>=Start,Position<=End),nomatch=0L]
+#Compress columns from variant to gene level:
+
+CpGcount <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(count, collapse = ", "))
+
+colnames(CpGcount)[1] = "Gene"
+colnames(CpGcount)[2] = "CpGcount"
+
+#Sum rows to get count per gene:
+CpGcount$CpGcount <- sapply(CpGcount$CpGcount, function(row) sum(as.numeric(strsplit(row, ", ")[[1]])), USE.NAMES = FALSE)
+
+CpGcount <- CpGcount[complete.cases(CpGcount), ]
+CpGcount <- CpGcount[!duplicated(CpGcount$Gene), ]
+fwrite(CpGcount, "Genes_CpG.txt") 
+
+head(CpGcount)
+```
+
+### DNase cluster counts per gene from UCSC data:
+
+```{r DNase, echo=c(-1)}
+rm(list = ls())
+
+file1 <- fread("Variants_GenesAnnotated.txt")
+file1 <- select(file1, Gene, Feature.Chr, Feature.Start, Feature.End)
+colnames(file1)[2] <- "Chromosome"
+colnames(file1)[3] <- "Start"
+colnames(file1)[4] <- "End"
+file1$Position <- file1$Start
+
+file2<-fread("DNaseClusters.txt")
+file2$chrom <- gsub('chr', '', file2$chrom)
+colnames(file2)[2] <- "Chr"
+colnames(file2)[3] <- "Start"
+colnames(file2)[4] <- "End"
+
+file2$Chr <- as.integer(file2$Chr)
+file1$Chr <- as.integer(file1$Chr)
+
+file2$count <- 1
+
+df <- file1[,.(Chr,Position,Start, End, Gene)][file2,
+                                      .(Chr,Position=x.Position, Start, End,Gene, name, score, count),
+                                      on=.(Chr,Position>=Start,Position<=End),nomatch=0L]
+
+
+score <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(score, collapse = ", "))
+
+cluster <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(count, collapse = ", "))
+
+merged <- Reduce(function(x, y) merge(x, y, by='Gene', all=TRUE), list(cluster, score))
+
+colnames(merged)[2] = "DNaseCluster_count"
+colnames(merged)[3] = "DNase_highestscore"
+
+merged$DNaseCluster_count <- sapply(merged$DNaseCluster_count, function(row) sum(as.numeric(strsplit(row, ", ")[[1]])), USE.NAMES = FALSE)
+
+
+DNaseClusters <- select(merged, Gene, DNaseCluster_count)
+DNaseClusters <- DNaseClusters[complete.cases(DNaseClusters), ]
+fwrite(DNaseClusters, "DNase_Gene.txt") 
+
+head(DNaseClusters)
+```
+
+### Enhancer site counts per gene from UCSC data:
+
+```{r, echo=c(-1)}
+rm(list = ls())
+
+file1 <- fread("Variants_GenesAnnotated.txt")
+file1 <- select(file1, Gene, Feature.Chr, Feature.Start, Feature.End)
+colnames(file1)[2] <- "Chromosome"
+colnames(file1)[3] <- "Start"
+colnames(file1)[4] <- "End"
+file1$Position <- file1$Start
+
+file2<-fread("GeneHancer.txt")
+file2$chrom <- gsub('chr', '', file2$chrom)
+colnames(file2)[1] <- "Chr"
+colnames(file2)[2] <- "Start"
+colnames(file2)[3] <- "End"
+
+file2$Chr <- as.integer(file2$Chr)
+file1$Chr <- as.integer(file1$Chr)
+file2$Start <- as.integer(file2$Start)
+file1$Start <- as.integer(file1$Start)
+file2$End <- as.integer(file2$End)
+file1$End <- as.integer(file1$End)
+
+test <- file1[,.(Chr,Position,Gene)][file2,
+                                      .(Chr,Position=x.Position, Start, End,Gene, score,name,elementType),
+                                      on=.(Chr,Position>=Start,Position<=End),nomatch=0L]
+
+
+setDT(test)[, count := uniqueN(name), by =Gene]
+
+
+score <- test %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(score, collapse = ", "))
+
+count <- test %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(count, collapse = ", "))
+
+
+
+count <- Reduce(function(x, y) merge(x, y, by='Gene', all=TRUE), list(score, count))
+
+colnames(count)[2] = "GeneHancerHighestScore"
+colnames(count)[3] = "EnhancerCount"
+
+count$EnhancerCount <- sapply(count$EnhancerCount, function(row) sum(as.numeric(strsplit(row, ", ")[[1]])), USE.NAMES = FALSE)
+
+
+count <- select(count, Gene,EnhancerCount)
+count <- count[complete.cases(count), ]
+fwrite(count, "GeneHancer_Gene.txt") 
+
+head(count)
+```
+
+### H3K4me1 site counts per gene from UCSC data (Huvec cell line):
+
+```{r H3k4me1, echo=c(-1)}
+rm(list = ls())
+
+file1 <- fread("Variants_GenesAnnotated.txt")
+file1 <- select(file1, Gene, Feature.Chr, Feature.Start, Feature.End)
+colnames(file1)[2] <- "Chromosome"
+colnames(file1)[3] <- "Start"
+colnames(file1)[4] <- "End"
+file1$Position <- file1$Start
+
+
+file2<-fread("wgEncodeBroadHistoneHuvecH3k4me1StdPk.txt")
+colnames(file2)[2] <- "Chr"
+file2$Chr <- gsub('chr', '', file2$Chr)
+colnames(file2)[3] <- "Start"
+colnames(file2)[4] <- "End"
+colnames(file2)[8] <- "SignalValue_H3k4me1"
+
+file2$Chr <- as.numeric(file2$Chr)
+file1$Chr <- as.integer(file1$Chr)
+file2$ID <- seq.int(nrow(file2))
+
+file2$count <- 1
+file2[, c("low", "high") := .(Start - 5000, End  + 5000)]
+
+df <- file1[,.(Chr,Position,Start, End, Gene)][file2,
+                                      .(Chr,Position=x.Position, Start, End,Gene,ID,SignalValue_H3k4me1, count),
+                                      on=.(Chr,Position>=low,Position<=high),nomatch=0L]
+
+df2 <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(SignalValue_H3k4me1, collapse = ", "))
+colnames(df2)[2] = "SignalValue_H3k4me1"
+
+df2$SignalValue_H3k4me1_median <- sapply(strsplit(df2$SignalValue_H3k4me1, ","), function(x) median(as.numeric(x)))
+
+genelength <- fread("GeneLength.txt")
+
+count <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(count, collapse = ", "))
+
+count$text <- sapply(strsplit(count$text, ", "), function(x) sum(as.numeric(x)))
+
+colnames(count)[2] = "H3k4me1_count"
+
+merge_df <- merge(df2, count, by='Gene')
+final <- select(merge_df, Gene, H3k4me1_count, SignalValue_H3k4me1_median)
+final <- final[complete.cases(final), ]
+fwrite(final, "H3k4me1_Gene.txt")
+
+head(final)
+```
+
+### H3K4me3 site counts per gene from UCSC data (Huvec cell line):
+
+```{r H3k4me3, echo=c(-1)}
+rm(list = ls())
+
+file1 <- fread("Variants_GenesAnnotated.txt")
+file1 <- select(file1, Gene, Feature.Chr, Feature.Start, Feature.End)
+colnames(file1)[2] <- "Chromosome"
+colnames(file1)[3] <- "Start"
+colnames(file1)[4] <- "End"
+file1$Position <- file1$Start
+
+file2<-fread("wgEncodeBroadHistoneHuvecH3k4me3StdPk.txt")
+colnames(file2)[2] <- "Chr"
+file2$Chr <- gsub('chr', '', file2$Chr)
+colnames(file2)[3] <- "Start"
+colnames(file2)[4] <- "End"
+colnames(file2)[8] <- "SignalValue_H3k4me3"
+
+file2$Chr <- as.numeric(file2$Chr)
+file1$Chr <- as.integer(file1$Chr)
+file2$ID <- seq.int(nrow(file2))
+
+file2$count <- 1
+file2[, c("low", "high") := .(Start - 5000, End  + 5000)]
+
+df <- file1[,.(Chr,Position,Start, End, Gene)][file2,
+                                               .(Chr,Position=x.Position, Start, End,Gene,ID,SignalValue_H3k4me3, count),
+                                               on=.(Chr,Position>=low,Position<=high),nomatch=0L]
+
+df2 <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(SignalValue_H3k4me3, collapse = ", "))
+colnames(df2)[2] = "SignalValue_H3k4me3"
+
+df2$SignalValue_H3k4me3_median <- sapply(strsplit(df2$SignalValue_H3k4me3, ","), function(x) median(as.numeric(x)))
+
+genelength <- fread("GeneLength.txt")
+
+count <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(count, collapse = ", "))
+
+count$text <- sapply(strsplit(count$text, ", "), function(x) sum(as.numeric(x)))
+
+colnames(count)[2] = "H3k4me3_count"
+
+merge_df <- merge(df2, count, by='Gene')
+final <- select(merge_df, Gene, H3k4me3_count, SignalValue_H3k4me3_median)
+final <- final[complete.cases(final), ]
+fwrite(final, "H3k4me3_Gene.txt")
+
+head(final)
+```
+
+### H3k27Ac site counts per gene from UCSC data (Huvec cell line):
+
+```{r H3k27, echo=c(-1)}
+rm(list = ls())
+
+file1 <- fread("Variants_GenesAnnotated.txt")
+file1 <- select(file1, Gene, Feature.Chr, Feature.Start, Feature.End)
+colnames(file1)[2] <- "Chromosome"
+colnames(file1)[3] <- "Start"
+colnames(file1)[4] <- "End"
+file1$Position <- file1$Start
+
+file2<-fread("wgEncodeBroadHistoneHuvecH3k27AcStdPk.txt")
+colnames(file2)[2] <- "Chr"
+file2$Chr <- gsub('chr', '', file2$Chr)
+colnames(file2)[3] <- "Start"
+colnames(file2)[4] <- "End"
+colnames(file2)[8] <- "SignalValue_H3k27Ac"
+
+file2$Chr <- as.numeric(file2$Chr)
+file1$Chr <- as.integer(file1$Chr)
+file2$ID <- seq.int(nrow(file2))
+
+file2$count <- 1
+file2[, c("low", "high") := .(Start - 5000, End  + 5000)]
+
+df <- file1[,.(Chr,Position,Start, End, Gene)][file2,
+                                      .(Chr,Position=x.Position, Start, End,Gene,ID, count, SignalValue_H3k27Ac),
+                                      on=.(Chr,Position>=low,Position<=high),nomatch=0L]
+
+df2 <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(SignalValue_H3k27Ac, collapse = ", "))
+colnames(df2)[2] = "SignalValue_H3k27Ac"
+
+df2$SignalValue_H3k27Ac_median <- sapply(strsplit(df2$SignalValue_H3k27Ac, ","), function(x) median(as.numeric(x)))
+
+genelength <- fread("GeneLength.txt")
+
+count <- df %>%
+  group_by(Gene) %>%
+  summarize(text = str_c(count, collapse = ", "))
+
+count$text <- sapply(strsplit(count$text, ", "), function(x) sum(as.numeric(x)))
+
+colnames(count)[2] = "H3k27Ac_count"
+
+merge_df <- merge(df2, count, by='Gene')
+final <- select(merge_df, Gene, H3k27Ac_count, SignalValue_H3k27Ac_median)
+final <- final[complete.cases(final), ]
+fwrite(final, "H3k27Ac_Gene.txt")
+
+head(final)
+```
+
+### DeepSEA variant annotation
+- Functional significance scores taken per variants associated to blood pressure (found by multiple querys in DeepSEA's online analysis tool)
+- DeepSEA variant file then merged with gene list by chromosome position and minimum value per gene selected
+```{r DeepSEA, echo=c(-1)}
+rm(list = ls())
+
+file1 <- fread('infile.vcf.out_file1.funsig')
+file2 <- fread('infile.vcf.out_file2.funsig')
+file3 <- fread('infile.vcf.out_file3.funsig')
+file4 <- fread('infile.vcf.out_file4.funsig')
+file5 <- fread('infile.vcf.out_file5.funsig')
+file6 <- fread('infile.vcf.out_file6.funsig')
+file7 <- fread('infile.vcf.out_file7.funsig')
+file8 <- fread('infile.vcf.out_file8.funsig')
+file9 <- fread('infile.vcf.out_file9.funsig')
+file10 <- fread('infile.vcf.out_file10.funsig')
+file11<- fread('infile.vcf.out_file11.funsig')
+file12<- fread('infile.vcf.out_file12.funsig')
+file13<- fread('infile.vcf.out_file13.funsig')
+file14<- fread('infile.vcf.out_file14.funsig')
+file16<- fread('infile.vcf.out_file16.funsig')
+file17 <- fread('infile.vcf.out_file17.funsig')
+file18<- fread('infile.vcf.out_file18.funsig')
+file19<- fread('infile.vcf.out_file19.funsig')
+file20 <- fread('infile.vcf.out_file20.funsig')
+file21<- fread('infile.vcf.out_file21.funsig')
+
+
+df <- rbind(file1,file2,file3,file4,file5,file6,file7,file8,file9,file10,
+            file11,file12,file13,file14,file16,file17,file18,file19,file20,file21)
+
+#Create CP column:
+df$chr <- gsub("^.{0,3}", "", df$chr)
+df$CP <- paste(df$chr, df$pos,sep=":")
+colnames(df)[7]<-'DeepSEA_Functional_Significance'
+df <- dplyr::select(df, CP, DeepSEA_Functional_Significance)
+
+loci <- fread('Variants_GenesAnnotated.txt') #Made in GWAS variant data filtering
+#Get genes per variant and their DeepSEA score:
+deepsea_df <- merge(loci, df, by='CP',  all.x=TRUE)
+
+deepsea_df <- subset(deepsea_df, select=c(Gene, DeepSEA_Functional_Significance))
+
+temp <- deepsea_df[, lapply(.SD, paste0, collapse = ", "), by = Gene]
+
+#Get min values per gene
+
+min2 = function(x) if(all(is.na(x))) NA else min(x,na.rm = T)
+getmin = function(col) str_extract_all(col,"[0-9\\.-]+") %>%
+  lapply(.,function(x)min2(as.numeric(x)) ) %>%
+  unlist() 
+
+deepsea <- temp %>%
+  mutate_at(names(temp)[2],getmin)
+
+write.table(deepsea,"deepsea_genes.txt",sep="\t",row.names=FALSE)
+head(deepsea)
+
+```
+
+
+### GTEx tissue fold change data merged to combine all individual tissue files
+Downloaded GTEx eQTL data (GTEx_Analysis_v8_eQTL.tar) and unzipped to get egene files (*.egenes.txt.gz files contain data for all genes tested)
+1. Read all files into environment and select only Gene name and FC columns
+2. Rename columns
+3. Merge datasets together with genelist for final file
+
+```{r GTEx, echo=c(-1, -2)}
+rm(list = ls())
+setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/Data Preprocessing/GTEx_Analysis_v8_eQTL")
+
+#Read in all files in GTEx directory
+temp = list.files(pattern="*.txt")
+for (i in 1:length(temp)) assign(temp[i], fread(temp[i]))
+
+#Rename Gene column for every dataset in environment
+my_func <- function(x) {
+  x <- x %>%
+    select(gene_name,log2_aFC) 
+}
+
+e <- .GlobalEnv
+nms <- ls(pattern = ".txt$", envir = e)
+for(nm in nms) e[[nm]] <- my_func(e[[nm]])
+
+#Rename all FC columns to unqiue names
+colnames(Adipose_Subcutaneous.v8.egenes.txt)[2] <- 'Adipose_Subcutaneous_GTExFC'
+colnames(Adipose_Visceral_Omentum.v8.egenes.txt)[2] <- 'Adipose_Visceral_Omentum_GTExFC'
+colnames(Adrenal_Gland.v8.egenes.txt)[2] <- 'Adrenal_Gland_GTExFC'
+colnames(Artery_Aorta.v8.egenes.txt)[2] <- 'Artery_Aorta_GTExFC'
+colnames(Artery_Coronary.v8.egenes.txt)[2] <- 'Artery_Coronary_GTExFC'
+colnames(Artery_Tibial.v8.egenes.txt)[2] <- 'Artery_Tibial_GTExFC'
+colnames(Brain_Amygdala.v8.egenes.txt)[2] <- 'Brain_Amygdala_GTExFC'
+colnames(Brain_Anterior_cingulate_cortex_BA24.v8.egenes.txt)[2] <- 'Brain_Anterior_cingulate_cortex_BA24_GTExFC'
+colnames(Brain_Caudate_basal_ganglia.v8.egenes.txt)[2] <- 'Brain_Caudate_basal_ganglia_GTExFC'
+colnames(Brain_Cerebellar_Hemisphere.v8.egenes.txt)[2] <- 'Brain_Cerebellar_Hemisphere_GTExFC'
+colnames(Brain_Cerebellum.v8.egenes.txt)[2] <- 'Brain_Cerebellum_GTExFC'
+colnames(Brain_Cortex.v8.egenes.txt)[2] <- 'Brain_Cortex_GTExFC'
+colnames(Brain_Frontal_Cortex_BA9.v8.egenes.txt)[2] <- 'Brain_Frontal_Cortex_BA9_GTExFC'
+colnames(Brain_Hippocampus.v8.egenes.txt)[2] <- 'Brain_Hippocampus_GTExFC'
+colnames(Brain_Hypothalamus.v8.egenes.txt)[2] <- 'Brain_Hypothalamus_GTExFC'
+colnames(Brain_Nucleus_accumbens_basal_ganglia.v8.egenes.txt)[2] <- 'Brain_Nucleus_accumbens_basal_ganglia_GTExFC'
+colnames(Brain_Putamen_basal_ganglia.v8.egenes.txt)[2] <- 'Brain_Putamen_basal_ganglia_GTExFC'
+colnames(`Brain_Spinal_cord_cervical_c-1.v8.egenes.txt`)[2] <- '`Brain_Spinal_cord_cervical_c-1`_GTExFC'
+colnames(Brain_Substantia_nigra.v8.egenes.txt)[2] <- 'Brain_Substantia_nigra_GTExFC'
+colnames(Breast_Mammary_Tissue.v8.egenes.txt)[2] <- 'Breast_Mammary_Tissue_GTExFC'
+colnames(Cells_Cultured_fibroblasts.v8.egenes.txt)[2] <- 'Cells_Cultured_fibroblasts_GTExFC'
+colnames(`Cells_EBV-transformed_lymphocytes.v8.egenes.txt`)[2] <- '`Cells_EBV-transformed_lymphocytes`_GTExFC'
+colnames(Colon_Sigmoid.v8.egenes.txt)[2] <- 'Colon_Sigmoid_GTExFC'
+colnames(Colon_Transverse.v8.egenes.txt)[2] <- 'Colon_Transverse_GTExFC'
+colnames(Esophagus_Gastroesophageal_Junction.v8.egenes.txt)[2] <- 'Esophagus_Gastroesophageal_Junction_GTExFC'
+colnames(Esophagus_Mucosa.v8.egenes.txt)[2] <- 'Esophagus_Mucosa_GTExFC'
+colnames(Esophagus_Muscularis.v8.egenes.txt)[2] <- 'Esophagus_Muscularis_GTExFC'
+colnames(Heart_Atrial_Appendage.v8.egenes.txt)[2] <- 'Heart_Atrial_Appendage_GTExFC'
+colnames(Heart_Left_Ventricle.v8.egenes.txt)[2] <- 'Heart_Left_Ventricle_GTExFC'
+colnames(Kidney_Cortex.v8.egenes.txt)[2] <- 'Kidney_Cortex_GTExFC'
+colnames(Liver.v8.egenes.txt)[2] <- 'Liver_GTExFC'
+colnames(Lung.v8.egenes.txt)[2] <- 'Lung_GTExFC'
+colnames(Minor_Salivary_Gland.v8.egenes.txt)[2] <- 'Minor_Salivary_Gland_GTExFC'
+colnames(Muscle_Skeletal.v8.egenes.txt)[2] <- 'Muscle_Skeletal_GTExFC'
+colnames(Nerve_Tibial.v8.egenes.txt)[2] <- 'Nerve_Tibial_GTExFC'
+colnames(Ovary.v8.egenes.txt)[2] <- 'Ovary_GTExFC'
+colnames(Pancreas.v8.egenes.txt)[2] <- 'Pancreas_GTExFC'
+colnames(Pituitary.v8.egenes.txt)[2] <- 'Pituitary_GTExFC'
+colnames(Prostate.v8.egenes.txt)[2] <- 'Prostate_GTExFC'
+colnames(Skin_Not_Sun_Exposed_Suprapubic.v8.egenes.txt)[2] <- 'Skin_Not_Sun_Exposed_Suprapubic_GTExFC'
+colnames(Skin_Sun_Exposed_Lower_leg.v8.egenes.txt)[2] <- 'Skin_Sun_Exposed_Lower_leg_GTExFC'
+colnames(Small_Intestine_Terminal_Ileum.v8.egenes.txt)[2] <- 'Small_Intestine_Terminal_Ileum_GTExFC'
+colnames(Spleen.v8.egenes.txt)[2] <- 'Spleen_GTExFC'
+colnames(Stomach.v8.egenes.txt)[2] <- 'Stomach_GTExFC'
+colnames(Testis.v8.egenes.txt)[2] <- 'Testis_GTExFC'
+colnames(Thyroid.v8.egenes.txt)[2] <- 'Thyroid_GTExFC'
+colnames(Uterus.v8.egenes.txt)[2] <- 'Uterus_GTExFC'
+colnames(Vagina.v8.egenes.txt)[2] <- 'Vagina_GTExFC'
+colnames(Whole_Blood.v8.egenes.txt)[2] <- 'Whole_Blood_GTExFC'
+
+rm(temp, nm, nms, my_func, i, e)
+setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/Data Preprocessing")
+
+genes <-  fread("pval07_genelist_filtered_evangelou.txt")
+genes <- select(genes, Gene)
+colnames(genes)[1] <- 'gene_name'
+
+#Remove duplicate genes in any datasets (that were causing the following merge to be too large)
+df_varnames <- ls()[ grep(".txt$", ls()) ]
+for (dfname in df_varnames) {
+  df <- get(dfname)
+  assign(dfname, df[! duplicated(df$gene_name), ])
+}
+
+GTEx_df <- Reduce(function(x, y) merge(x, y, by='gene_name', all.x=TRUE), list(genes, Adipose_Subcutaneous.v8.egenes.txt,
+                                                                       Adipose_Visceral_Omentum.v8.egenes.txt,
+                                                                       Adrenal_Gland.v8.egenes.txt,
+                                                                       Artery_Aorta.v8.egenes.txt,
+                                                                       Artery_Coronary.v8.egenes.txt,
+                                                                       Artery_Tibial.v8.egenes.txt,
+                                                                       Brain_Amygdala.v8.egenes.txt,
+                                                                       Brain_Anterior_cingulate_cortex_BA24.v8.egenes.txt,
+                                                                       Brain_Caudate_basal_ganglia.v8.egenes.txt,
+                                                                       Brain_Cerebellar_Hemisphere.v8.egenes.txt,
+                                                                       Brain_Cerebellum.v8.egenes.txt,
+                                                                       Brain_Cortex.v8.egenes.txt,
+                                                                       Brain_Frontal_Cortex_BA9.v8.egenes.txt,
+                                                                       Brain_Hippocampus.v8.egenes.txt,
+                                                                       Brain_Hypothalamus.v8.egenes.txt,
+                                                                       Brain_Nucleus_accumbens_basal_ganglia.v8.egenes.txt,
+                                                                       Brain_Putamen_basal_ganglia.v8.egenes.txt,
+                                                                       `Brain_Spinal_cord_cervical_c-1.v8.egenes.txt`,
+                                                                       Brain_Substantia_nigra.v8.egenes.txt,
+                                                                       Breast_Mammary_Tissue.v8.egenes.txt,
+                                                                       Cells_Cultured_fibroblasts.v8.egenes.txt,
+                                                                       `Cells_EBV-transformed_lymphocytes.v8.egenes.txt`,
+                                                                       Colon_Sigmoid.v8.egenes.txt,
+                                                                       Colon_Transverse.v8.egenes.txt,
+                                                                       Esophagus_Gastroesophageal_Junction.v8.egenes.txt,
+                                                                       Esophagus_Mucosa.v8.egenes.txt,
+                                                                       Esophagus_Muscularis.v8.egenes.txt,
+                                                                       Heart_Atrial_Appendage.v8.egenes.txt,
+                                                                       Heart_Left_Ventricle.v8.egenes.txt,
+                                                                       Kidney_Cortex.v8.egenes.txt,
+                                                                       Liver.v8.egenes.txt,
+                                                                       Lung.v8.egenes.txt,
+                                                                       Minor_Salivary_Gland.v8.egenes.txt,
+                                                                       Muscle_Skeletal.v8.egenes.txt,
+                                                                       Nerve_Tibial.v8.egenes.txt,
+                                                                       Ovary.v8.egenes.txt,
+                                                                       Pancreas.v8.egenes.txt,
+                                                                       Pituitary.v8.egenes.txt,
+                                                                       Prostate.v8.egenes.txt,
+                                                                       Skin_Not_Sun_Exposed_Suprapubic.v8.egenes.txt,
+                                                                       Skin_Sun_Exposed_Lower_leg.v8.egenes.txt,
+                                                                       Small_Intestine_Terminal_Ileum.v8.egenes.txt,
+                                                                       Spleen.v8.egenes.txt,
+                                                                       Stomach.v8.egenes.txt,
+                                                                       Testis.v8.egenes.txt,
+                                                                       Thyroid.v8.egenes.txt,
+                                                                       Uterus.v8.egenes.txt,
+                                                                       Vagina.v8.egenes.txt,
+                                                                       Whole_Blood.v8.egenes.txt
+))
+
+
+colnames(GTEx_df)[1] <- 'Gene'
+#write.table(GTEx_df,"./GTEx_FC.txt", row.names=FALSE)
+
+dim(GTEx_df)
+names(GTEx_df)
+```
+
+## <a id="7. Merging databases and dividing training data"></a>7. Merging databases and dividing training data
+
+```{r Final merged databases, echo=c(-1)}
+rm(list = ls())
+#Load all collected feature data
+df1 <- fread('pval07_genelist_filtered_evangelou.txt')
+df2 <- fread('GTEx_TPM.txt')
+df2 <- df2[,2:56] #For GTEx median TPM data
+df3 <- fread('GTEx_FC.txt')
+df4<-fread("gwascata_genes.txt", fill=TRUE)
+df4$logpval_gwascatalog[is.na(df4$logpval_gwascatalog)] <- 0
+#Getting partial gene matches for longer strings for genes in GWAScatalog:
+df1$Genes_Extended <- 
+  df4$Gene[sapply(df1$Gene, 
+                         function(x) match(x, substr(df4$Gene, 1, nchar(x))))]
+colnames(df4)[1] <- 'Genes_Extended'
+df1 <- merge(df1, df4, by='Genes_Extended', all.x=T)
+df1 <- subset(df1, select = -c(Genes_Extended, gwastrait) )
+df5 <- fread('deepsea_genes.txt')
+df6 <- fread('exomiser_scores.txt') 
+df7 <- fread('Genelist_drug_and_databases.txt')
+df8 <- fread("genic_intolerance_v3_12Mar16.txt")
+df8 <- select(df8, Gene, `ALL_0.1%`)
+colnames(df8)[2] <-'RVIS_Score'
+df9 <- fread('genie_textminingBP.txt')
+colnames(df9)[3] <-'Gene'
+df9 <- select(df9, Gene, Rank)
+df10 <- fread('panglaodb_cells_highestscores.txt')
+df11 <- fread('Genes_CpG.txt')
+df12 <- fread('DNase_Gene.txt')
+df13 <- fread('GeneHancer_Gene.txt')
+df14<- fread('SDI_genes.txt')
+df15<- fread('H3K4me1_Gene.txt')
+df16 <- fread('H3K4me3_Gene.txt')
+df17 <- fread('H3K27Ac_Gene.txt')
+df18 <- fread('exac_march16_pLI.txt')
+colnames(df18)[2] <- 'Gene'
+colnames(df18)[20] <- 'pLI_ExAC'
+colnames(df18)[21] <- 'CNVs_ExAC'
+df18<-df18[,c(2, 20, 21)]
+df19 <- fread('GeneLength.txt')
+colnames(df19)[1] <- 'Gene'
+df20 <- fread('MGImarkerQuery_hypertension.txt', fill=TRUE)
+colnames(df20)[8] <- 'Gene'
+df20 <- select(df20, Gene)
+df20$MGI_Gene <- 1
+df21 <- fread('Genes_ratmodels.txt')
+df21 <- select(df21, Gene)
+df21$Ratmodel_Gene <- 1
+df22 <- fread('GDI.txt')
+df22 <- df22[,1:2]
+df23 <- fread('GTEx_sexbias.txt')
+df24 <- fread('HIPred.tsv')
+df25 <- fread('IPA_Activity.txt')
+df26 <- fread('O_GLcNAc_Score.txt')
+df27 <- fread('EMS.txt')
+df28 <- fread('PharmGKB_Score.txt')
+df29 <- fread('ExAc_constraint.txt')
+
+#Merge all loaded data
+all_features <- Reduce(function(x, y) merge(x, y, by = 'Gene', all.x = TRUE),
+                       list(df1, df2, df3, df5, df6, df7, df8, df9, df10, df11,
+                            df12, df13, df14, df15, df16, df17, df18, df19,df20,
+                            df21, df22, df23, df24, df25, df26, df27, df28, df29))
+all_features <- all_features[!duplicated(all_features$Gene), ]
+
+#Label training genes and write final file
+all_features$BPlabel <- NA
+all_features$BPmed[all_features$BPmed==0] <- NA
+
+all_features[, BPlabel := fcase( 
+  Mechanism == 1 | BPmed >= 3 , 'most likely', 
+  BPmed < 3 | SideeffectFreq > 1 | Rank >= 1, 'probable',
+  insignif == 1, 'least likely',
+  default = 'unknown')]
+
+all_features = subset(all_features, select = -c(BPmed, Mechanism, Others, insignif, SideeffectFreq, Sideeffectseverity, Rank) )
+
+
+testbp1 <- filter(all_features, BPlabel == 'least likely') 
+testbp2 <- filter(all_features, BPlabel == 'probable')  
+testbp3 <- filter(all_features, BPlabel == 'most likely') 
+
+training <- filter(all_features, BPlabel != 'unknown')
+unknown <- filter(all_features, BPlabel == 'unknown')
+
+write.table(training,"pval07_BP_training.txt", sep = "\t", row.names = F, quote = F)
+write.table(unknown,"pval07_BP_unknown.txt", sep = "\t", row.names = F, quote = F)
+
+write.table(all_features,"pval07_all_genes_all_features.txt", sep = "\t", row.names = F, quote = F)
+
+
+dim(training)
+names(training)
+```
+
+## <a id="8. Gene length correlation"></a>8. Gene length correlation
+
+```{r}
+train_variants <- select(training, Gene_length, CpGcount, EnhancerCount, DNaseCluster_count, H3k4me1_count,
+                         H3k4me3_count, H3k27Ac_count, betamax, DeepSEA_Functional_Significance,
+                         wgEncodeBroadHmmHuvecHMM.count, logpval_gwascatalog)
+all_variants <- select(all_features, Gene_length, CpGcount, EnhancerCount, DNaseCluster_count, H3k4me1_count,
+                         H3k4me3_count, H3k27Ac_count, betamax, DeepSEA_Functional_Significance,
+                         wgEncodeBroadHmmHuvecHMM.count, logpval_gwascatalog)
+
+training_table <- t(sapply(train_variants[, -1], function(x) {
+  c(Pearsons = cor(train_variants$Gene_length, x, method = "pearson", use = "complete.obs"), 
+    Spearman = cor(train_variants$Gene_length, x, method = "spearman", use = "complete.obs"))
+}))
+
+all_variants_table <- t(sapply(all_variants[, -1], function(x) {
+  c(Pearsons = cor(all_variants$Gene_length, x, method = "pearson", use = "complete.obs"), 
+    Spearman = cor(all_variants$Gene_length, x, method = "spearman", use = "complete.obs"))
+}))
+
+print('Training data gene length correlation for variant level features:')
+print(training_table)
+
+print('Total data gene length correlation for variant level features:')
+print(all_variants_table)
+
+```
+
+
+## <a id="9. SessionInfo"></a>9. SessionInfo
+
+```{r}
+sessionInfo()
+```
+
+
