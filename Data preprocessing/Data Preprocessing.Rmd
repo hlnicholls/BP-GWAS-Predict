@@ -156,7 +156,7 @@ final_insignif <- subset(insign, !(CP %in% ld$CP))
 fwrite(final_insignif, "gwas_insignificant-variants-filtered.txt")
 ```
 
-Writing file to enter unix annotation in bedtool and ANNOVAR:
+Writing file to enter unix annotation in bedtools and ANNOVAR:
 
 ```{r Preparing variant file for gene annotation}
 
@@ -309,8 +309,8 @@ pval05 = dt2[dt2$minP.min > 0.5] #198
 pval055 = dt2[dt2$minP.min > 0.55] #141
 pval06 = dt2[dt2$minP.min > 0.6] #105
 pval065 = dt2[dt2$minP.min > 0.65] #75
-pval07 = dt2[dt2$minP.min > 0.7] #57
-pval075 = dt2[dt2$minP.min > 0.75] #37
+pval015 = dt2[dt2$minP.min > 0.7] #57
+pval0155 = dt2[dt2$minP.min > 0.75] #37
 pval08 = dt2[dt2$minP.min > 0.8] #19
 pval085 = dt2[dt2$minP.min > 0.85] #9
 pval09 = dt2[dt2$minP.min > 0.9] #4
@@ -328,8 +328,8 @@ fwrite(pval05, 'pval05_forPPI.txt', row.names = FALSE)
 fwrite(pval055, 'pval055_forPPI.txt', row.names = FALSE)
 fwrite(pval06, 'pval06_forPPI.txt', row.names = FALSE)
 fwrite(pval065, 'pval065_forPPI.txt', row.names = FALSE)
-fwrite(pval07, 'pval07_forPPI.txt', row.names = FALSE)
-fwrite(pval075, 'pval075_forPPI.txt', row.names = FALSE)
+fwrite(pval015, 'pval015_forPPI.txt', row.names = FALSE)
+fwrite(pval0155, 'pval0155_forPPI.txt', row.names = FALSE)
 fwrite(pval08, 'pval08_forPPI.txt', row.names = FALSE)
 fwrite(pval085, 'pval085_forPPI.txt', row.names = FALSE)
 fwrite(pval09, 'pval09_forPPI.txt', row.names = FALSE)
@@ -410,9 +410,9 @@ colnames(proteindf)[2] <- "STRING_id2"
 #Interaction scores only from coexpression, experiments and database used:
 protein_df <- select(proteindf, STRING_id1, STRING_id2, coexpression,
                      experiments, database)
-protein_df <- filter(protein_df, experiments != 0 | coexpression !=0 | database !=0)
+protein_df <- filter(protein_df, experiments != 0)
 protein_df$Max <- apply(protein_df[,3:5], 1, FUN = max)
-protein_df <- filter(protein_df, Max >= 400) 
+protein_df <- filter(protein_df, Max >= 150) 
 
 protein_df <- select(protein_df, STRING_id1, STRING_id2)
 ```
@@ -493,7 +493,7 @@ PPI_df$interactors <- sapply(PPI_df$interactors , function(x) paste(unique(unlis
 
 interactors <- select(PPI_df, Gene, interactors)
 
-fwrite(interactors, "PPI400_gene_interactions_evangelou.txt", sep="\t", row.names = F, quote = F)
+fwrite(interactors, "PPI150_gene_interactions_evangelou.txt", sep="\t", row.names = F, quote = F)
 
 ```
 
@@ -505,7 +505,7 @@ fwrite(interactors, "PPI400_gene_interactions_evangelou.txt", sep="\t", row.name
 rm(list = ls())
 
 Genelist <- fread("Genelist_forPPI.txt")
-interactors <- fread("PPI400_gene_interactions_evangelou.txt")
+interactors <- fread("PPI150_gene_interactions_evangelou.txt")
 drugdf <- fread("Genelist_drug_and_databases.txt")
 textminingdf <- fread('genie_textminingBP.txt')
 colnames(textminingdf)[3] <-'Gene'
@@ -585,7 +585,7 @@ bp_true_interactions2 <- filter(ll_df, matched_secondary_interactor == "TRUE")
 ld_genes <- fread('LD01_genes.txt')
 no_ld_genes <- subset(bp_false_interactions2, !(Gene %in% ld_genes$Gene))
 
-write.table(no_ld_genes,"pval07_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
+write.table(no_ld_genes,"pval015_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
 
 ```
 
@@ -597,7 +597,7 @@ write.table(no_ld_genes,"pval07_filtered_unassociated_genes.txt",sep="\t", row.n
 rm(list = ls())
 
 df <- fread('Genes_evangel_and_insignif.txt')
-ppifiltered1 <- fread('pval07_filtered_unassociated_genes.txt')
+ppifiltered1 <- fread('pval015_filtered_unassociated_genes.txt')
 
 df$insignif[df$insignif==""] <- NA
 df1 <- filter(df, is.na(insignif))
@@ -741,7 +741,7 @@ df_all_features <- df_new %>% select_if(~!all(is.na(.)))
 insignif <- select(data, Gene, insignif)
 df_all_features <- merge(df_all_features, insignif, all.x = TRUE)
 #Write final file:
-fwrite(df_all_features, "pval07_genelist_filtered_evangelou.txt", 
+fwrite(df_all_features, "pval015_genelist_filtered_evangelou.txt", 
        sep = "\t", row.names = FALSE)
 
 head(df_all_features)
@@ -1344,7 +1344,7 @@ colnames(Whole_Blood.v8.egenes.txt)[2] <- 'Whole_Blood_GTExFC'
 rm(temp, nm, nms, my_func, i, e)
 setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/Data Preprocessing")
 
-genes <-  fread("pval07_genelist_filtered_evangelou.txt")
+genes <-  fread("pval015_genelist_filtered_evangelou.txt")
 genes <- select(genes, Gene)
 colnames(genes)[1] <- 'gene_name'
 
@@ -1419,7 +1419,7 @@ names(GTEx_df)
 ```{r Final merged databases, echo=c(-1)}
 rm(list = ls())
 #Load all collected feature data
-df1 <- fread('pval07_genelist_filtered_evangelou.txt')
+df1 <- fread('pval015_genelist_filtered_evangelou.txt')
 df2 <- fread('GTEx_TPM.txt')
 df2 <- df2[,2:56] #For GTEx median TPM data
 df3 <- fread('GTEx_FC.txt')
@@ -1500,10 +1500,10 @@ testbp3 <- filter(all_features, BPlabel == 'most likely')
 training <- filter(all_features, BPlabel != 'unknown')
 unknown <- filter(all_features, BPlabel == 'unknown')
 
-write.table(training,"pval07_BP_training.txt", sep = "\t", row.names = F, quote = F)
-write.table(unknown,"pval07_BP_unknown.txt", sep = "\t", row.names = F, quote = F)
+write.table(training,"pval015_BP_training.txt", sep = "\t", row.names = F, quote = F)
+write.table(unknown,"pval015_BP_unknown.txt", sep = "\t", row.names = F, quote = F)
 
-write.table(all_features,"pval07_all_genes_all_features.txt", sep = "\t", row.names = F, quote = F)
+write.table(all_features,"pval015_all_genes_all_features.txt", sep = "\t", row.names = F, quote = F)
 
 
 dim(training)
