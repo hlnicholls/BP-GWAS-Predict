@@ -210,8 +210,7 @@ head(totaldata)
 ## <a id="2. GWAS variant p-value filtering"></a>2. GWAS variant p-value filtering
 - ANNOVAR variant feature filtering and selecting insigifnicant genes for PPI filtering:
 
-```{r pval filtering}
-
+```{r gene collapsing}
 df <- fread("Total_Genes_Annotated.ANN.hg19_multianno.txt", fill=TRUE)
 #Annovar puts its header into 2nd row, needing rows 1 and 2 combined
 tmp <- row_to_names(df, row_number = 1)
@@ -229,6 +228,11 @@ df <- filter(df, !is.na(df$Gene))
 
 #Write to be used in feature processing of epigenetic features (needs both variants and genes)
 fwrite(df, "Variants_GenesAnnotated.txt", sep = "\t", row.names = FALSE)
+```
+
+
+
+```{r pval filtering}
 df <- fread("Variants_GenesAnnotated.txt")
 
 insignif <- fread("gwas_insignificant-variants-filtered.txt")
@@ -297,23 +301,23 @@ dt2 <- dt
 
 pval = dt2[dt2$minP.min > 0.0000005]
 
-pval01 = dt2[dt2$minP.min > 0.1] #2013
-pval015 = dt2[dt2$minP.min > 0.15] #1366
-pval02 = dt2[dt2$minP.min > 0.2] #975
-pval025 = dt2[dt2$minP.min > 0.25] #738
-pval03 = dt2[dt2$minP.min > 0.3] #554
-pval035 = dt2[dt2$minP.min > 0.35] #421
-pval04 = dt2[dt2$minP.min > 0.4] #325
-pval045 = dt2[dt2$minP.min > 0.45] #260
-pval05 = dt2[dt2$minP.min > 0.5] #198
-pval055 = dt2[dt2$minP.min > 0.55] #141
-pval06 = dt2[dt2$minP.min > 0.6] #105
-pval065 = dt2[dt2$minP.min > 0.65] #75
-pval015 = dt2[dt2$minP.min > 0.7] #57
-pval0155 = dt2[dt2$minP.min > 0.75] #37
-pval08 = dt2[dt2$minP.min > 0.8] #19
-pval085 = dt2[dt2$minP.min > 0.85] #9
-pval09 = dt2[dt2$minP.min > 0.9] #4
+pval01 = dt2[dt2$minP.min > 0.1] 
+pval015 = dt2[dt2$minP.min > 0.15] 
+pval02 = dt2[dt2$minP.min > 0.2] 
+pval025 = dt2[dt2$minP.min > 0.25] 
+pval03 = dt2[dt2$minP.min > 0.3] 
+pval035 = dt2[dt2$minP.min > 0.35] 
+pval04 = dt2[dt2$minP.min > 0.4] 
+pval045 = dt2[dt2$minP.min > 0.45] 
+pval05 = dt2[dt2$minP.min > 0.5] 
+pval055 = dt2[dt2$minP.min > 0.55] 
+pval06 = dt2[dt2$minP.min > 0.6] 
+pval065 = dt2[dt2$minP.min > 0.65] 
+pval07 = dt2[dt2$minP.min > 0.7] 
+pval075 = dt2[dt2$minP.min > 0.75] 
+pval08 = dt2[dt2$minP.min > 0.8] 
+pval085 = dt2[dt2$minP.min > 0.85] 
+pval09 = dt2[dt2$minP.min > 0.9] 
 
 fwrite(pval, 'pval_forPPI.txt', row.names = FALSE)
 fwrite(pval01, 'pval01_forPPI.txt', row.names = FALSE)
@@ -328,8 +332,8 @@ fwrite(pval05, 'pval05_forPPI.txt', row.names = FALSE)
 fwrite(pval055, 'pval055_forPPI.txt', row.names = FALSE)
 fwrite(pval06, 'pval06_forPPI.txt', row.names = FALSE)
 fwrite(pval065, 'pval065_forPPI.txt', row.names = FALSE)
-fwrite(pval015, 'pval015_forPPI.txt', row.names = FALSE)
-fwrite(pval0155, 'pval0155_forPPI.txt', row.names = FALSE)
+fwrite(pval07, 'pval07_forPPI.txt', row.names = FALSE)
+fwrite(pval075, 'pval075_forPPI.txt', row.names = FALSE)
 fwrite(pval08, 'pval08_forPPI.txt', row.names = FALSE)
 fwrite(pval085, 'pval085_forPPI.txt', row.names = FALSE)
 fwrite(pval09, 'pval09_forPPI.txt', row.names = FALSE)
@@ -367,6 +371,21 @@ fwrite(data, 'Genes_evangel_and_insignif.txt', row.names = FALSE)
 
 #Identify gene list to undergo PPI filtering in later code
 dataforPPI <- select(data, Gene, insignif)
+
+get_range <- function(x) {
+  x <- type.convert(str_split(x, ",\\s+", simplify = TRUE), na.strings = c(".", "NA"))
+  x <- t(apply(x, 1L, function(i) {
+    i <- i[!is.na(i)]
+    if (length(i) < 1L) c(NA_real_, NA_real_) else range(i)
+  }))
+  dimnames(x)[[2L]] <- c("min", "max")
+  x
+}
+
+dataforPPI <- dataforPPI[, c(Gene = .(Gene), lapply(.SD, get_range)), .SDcols = -"Gene"]
+dataforPPI <- select(dataforPPI, Gene, insignif.max)
+colnames(dataforPPI)[2] <- 'insignif'
+
 fwrite(dataforPPI, 'Genelist_forPPI.txt', row.names = FALSE)
 
 ```
@@ -398,6 +417,7 @@ colnames(protein_info)[2] <- 'Gene'
 protein_info <- select(protein_info, Gene, protein_id)
 PPIs <- rbind(protein_alias, protein_info)
 
+
 #Total data downloaded from string including all scores per interactions loaded:
 
 proteindf <- fread("9606.protein.links.full.v11.0.txt")
@@ -408,10 +428,10 @@ colnames(proteindf)[1] <- "STRING_id1"
 colnames(proteindf)[2] <- "STRING_id2"
 
 #Interaction scores only from coexpression, experiments and database used:
-protein_df <- select(proteindf, STRING_id1, STRING_id2, coexpression,
-                     experiments, database)
+protein_df <- select(proteindf, STRING_id1, STRING_id2, 
+                     experiments)
 protein_df <- filter(protein_df, experiments != 0)
-protein_df$Max <- apply(protein_df[,3:5], 1, FUN = max)
+protein_df$Max <- apply(protein_df[,3], 1, FUN = max)
 protein_df <- filter(protein_df, Max >= 150) 
 
 protein_df <- select(protein_df, STRING_id1, STRING_id2)
@@ -455,11 +475,7 @@ all_string_IDs <- select(all_string_IDs, STRING_id1, Gene1, STRING_id2, Gene)
 colnames(all_string_IDs)[4] <- 'Gene2'
 all_string_IDs <- filter(all_string_IDs, !is.na(STRING_id1))
 
-#fwrite(all_string_IDs, 'all_STRING_IDs400.txt', row.names = FALSE)
-
-#Collapsing interactors to be listed per gene in each row
-#Each gene in Gene1 column needs condensing/collapsing to one unique gene per row in a column, with all that gene's interactors listed in another columnn
-#E.g. Genes in above output example needs to be condensed to 1 row with all Gene2 interactors listed for it 
+fwrite(all_string_IDs, 'STRING_IDs_Experimental_150.txt', row.names = FALSE)
 
 #Compress gene's interactors for first column:
 genes1 <- all_string_IDs[, c(2,4)]
@@ -468,6 +484,7 @@ genes1 <- data.table(genes1)
 genes1 <- genes1[,lapply(.SD, function(col) paste(col, collapse =", ")), 
                  by=.(Gene1)]
 genes1$Gene2 <- gsub("NA,", "", genes1$Gene2)
+
 
 head(genes1)
 ```
@@ -493,7 +510,7 @@ PPI_df$interactors <- sapply(PPI_df$interactors , function(x) paste(unique(unlis
 
 interactors <- select(PPI_df, Gene, interactors)
 
-fwrite(interactors, "PPI150_gene_interactions_evangelou.txt", sep="\t", row.names = F, quote = F)
+fwrite(interactors, "150_Experimental_interactions.txt", sep="\t", row.names = F, quote = F)
 
 ```
 
@@ -504,13 +521,22 @@ fwrite(interactors, "PPI150_gene_interactions_evangelou.txt", sep="\t", row.name
 ```{r PPI filtering5}
 rm(list = ls())
 
-Genelist <- fread("Genelist_forPPI.txt")
-interactors <- fread("PPI150_gene_interactions_evangelou.txt")
+
+Gene_list <- fread("Genelist_forPPI.txt")
+gene_types <- fread('hg19Rel92_AllgeneTypes_0kb.txt')
+colnames(gene_types)[c(4,5)] <- c('Gene', 'Type')
+gene_types <- select(gene_types, Gene, Type)
+Genelist <- merge(Gene_list, gene_types, by='Gene', all.x=TRUE)
+Genelist <- filter(Genelist, Type == 'protein_coding')
+LL_count <- filter(Genelist, !is.na(insignif))
+
+
+interactors <- fread("150_Experimental_interactions.txt")
 drugdf <- fread("Genelist_drug_and_databases.txt")
 textminingdf <- fread('genie_textminingBP.txt')
 colnames(textminingdf)[3] <-'Gene'
 genes_to_label <- Reduce(function(x, y) merge(x, y, by = 'Gene', all.x = TRUE),
-                       list(Genelist, drugdf, textminingdf))
+                         list(Genelist, drugdf, textminingdf))
 genes_to_label <- select(genes_to_label, Gene, BPmed, Mechanism,
                          SideeffectFreq, Rank, insignif)
 
@@ -522,7 +548,6 @@ genes_to_label[, BP_templabel := fcase(
 bp_labels <- select(genes_to_label, Gene, BP_templabel)
 #Genes with BP drug or BP mechanism (known BP genes)
 ml_df <- filter(bp_labels, BP_templabel == "most likely")
-#Genes at BP loci with all variants > 0.8 LD
 bp_genes <- fread('Genes_BPloci.bed')
 colnames(bp_genes)[12] <-'CP'
 colnames(bp_genes)[16] <-'Gene'
@@ -535,6 +560,7 @@ bp_genes3 <- select(bp_genes3, Gene)
 bp_genes3 <- select(bp_genes, Gene)
 
 ml_df <- rbind(ml_df, bp_genes3, fill=TRUE)
+
 ml_df[is.na(ml_df)] <- "most likely"
 ml_df <- ml_df[!duplicated(ml_df$Gene), ] #3,786 genes
 
@@ -560,10 +586,12 @@ secondary_bp_PPI <- merge(interactors_bp_PPI, interactors, by = 'Gene', all.x = 
 #Directly connected PPIs with known BP genes (matched_direct_interactor column)
 #Least likely genes that interact with a known BP gene
 ll_df$matched_direct_interactor <-  ll_df$Gene %in% unlist(strsplit
-                                        (bp_genes_PPI$interactors,", "))
+                                                           (bp_genes_PPI$interactors,
+                                                             ", "))
 
 ll_df$matched_secondary_interactor <- ll_df$Gene %in% unlist(strsplit
-                                          (secondary_bp_PPI$interactors, ", "))
+                                                             (secondary_bp_PPI$interactors,
+                                                               ", "))
 
 string_ids <- fread('9606.protein.info.v11.0.txt')
 colnames(string_ids)[2] <- 'Gene'
@@ -571,21 +599,21 @@ ll_matches <- ll_df[Gene %in% string_ids$Gene]
 
 #Select insignificant genes with no direct or secondary BP gene interactors
 
-bp_false_interactions1 <- filter(ll_df, matched_direct_interactor == "FALSE")
-bp_false_interactions2 <- filter(ll_df, matched_direct_interactor == "FALSE"
-                                  & matched_secondary_interactor == "FALSE") 
+exp150_false_interactions1 <- filter(ll_df, matched_direct_interactor == "FALSE")
 
-ll_matches1 <- bp_false_interactions1[Gene %in% ll_matches$Gene]
-ll_matches2 <- bp_false_interactions2[Gene %in% ll_matches$Gene]
+exp150_false_interactions2 <- filter(ll_df, matched_direct_interactor == "FALSE"
+                                 & matched_secondary_interactor == "FALSE") 
 
 bp_true_interactions1 <- filter(ll_df, matched_direct_interactor == "TRUE") 
 bp_true_interactions2 <- filter(ll_df, matched_secondary_interactor == "TRUE") 
 
+
 #read in genes with >0.1 r2 with BP loci to ensure genes are filtered:
 ld_genes <- fread('LD01_genes.txt')
-no_ld_genes <- subset(bp_false_interactions2, !(Gene %in% ld_genes$Gene))
+exp150_no_ld_genes <- subset(exp150_false_interactions2, !(Gene %in% ld_genes$Gene))
 
-write.table(no_ld_genes,"pval015_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
+write.table(exp150_no_ld_genes,"150_Experimental_pval015_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
+
 
 ```
 
@@ -597,15 +625,13 @@ write.table(no_ld_genes,"pval015_filtered_unassociated_genes.txt",sep="\t", row.
 rm(list = ls())
 
 df <- fread('Genes_evangel_and_insignif.txt')
-ppifiltered1 <- fread('pval015_filtered_unassociated_genes.txt')
+ppifiltered1 <- fread('150_Experimental_pval015_filtered_unassociated_genes.txt', select=c('Gene'))
+ppifiltered1$insignif <- 1
 
 df$insignif[df$insignif==""] <- NA
 df1 <- filter(df, is.na(insignif))
-df2 <- filter(df, insignif == 1)
-df2 <- df2[Gene %in% ppifiltered1$Gene]
-df2 <- df2[!duplicated(df2$Gene), ]
 
-data <- rbind(df1, df2)
+data <- rbind(df1, ppifiltered1, fill=TRUE)
 data <- data[!duplicated(data$Gene), ]
 
 #Select min or max value for each feature per gene between compressed values
@@ -1342,7 +1368,7 @@ colnames(Vagina.v8.egenes.txt)[2] <- 'Vagina_GTExFC'
 colnames(Whole_Blood.v8.egenes.txt)[2] <- 'Whole_Blood_GTExFC'
 
 rm(temp, nm, nms, my_func, i, e)
-setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/Data Preprocessing")
+setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/All GWAS data sorting")
 
 genes <-  fread("pval015_genelist_filtered_evangelou.txt")
 genes <- select(genes, Gene)

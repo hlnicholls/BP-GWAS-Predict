@@ -42,7 +42,7 @@ memory.limit(size=56000)
 
 ## <a id="1. Filtering insignificant variants"></a>1. Filtering insignificant variants
 
--   Insignificant variants defined as having a p-value &gt;0.15, no
+-   Insignificant variants defined as having a p-value \>0.15, no
     linkage disquilibrium r2 measures, and are not within 500kb +/-
     blood pressure loci
 -   Insignificant variants once identified and annotated to genes later
@@ -130,8 +130,8 @@ mismatch_extract <- subset(full_gwas, !(CP %in% cp_bp$CP))
 fwrite(mismatch_extract, "mismatched-genes.csv")
 ```
 
-Filtering by p-value &gt;0.15 and by variants not within 500kb+/- of
-blood pressure loci:
+Filtering by p-value \>0.15 and by variants not within 500kb+/- of blood
+pressure loci:
 
 ``` r
 #Filtering again by only variants not 500kb +/- sentinel SNPs:
@@ -208,7 +208,7 @@ final_insignif <- subset(insign, !(CP %in% ld$CP))
 fwrite(final_insignif, "gwas_insignificant-variants-filtered.txt")
 ```
 
-Writing file to enter unix annotation in bedtool and ANNOVAR:
+Writing file to enter unix annotation in bedtools and ANNOVAR:
 
 ``` r
 #Merge new insignificant variants with BP loci file
@@ -296,6 +296,9 @@ df <- filter(df, !is.na(df$Gene))
 
 #Write to be used in feature processing of epigenetic features (needs both variants and genes)
 fwrite(df, "Variants_GenesAnnotated.txt", sep = "\t", row.names = FALSE)
+```
+
+``` r
 df <- fread("Variants_GenesAnnotated.txt")
 
 insignif <- fread("gwas_insignificant-variants-filtered.txt")
@@ -364,22 +367,23 @@ dt2 <- dt
 
 pval = dt2[dt2$minP.min > 0.0000005]
 
-pval015 = dt2[dt2$minP.min > 0.15] #1366
-pval02 = dt2[dt2$minP.min > 0.2] #975
-pval025 = dt2[dt2$minP.min > 0.25] #738
-pval03 = dt2[dt2$minP.min > 0.3] #554
-pval035 = dt2[dt2$minP.min > 0.35] #421
-pval04 = dt2[dt2$minP.min > 0.4] #325
-pval045 = dt2[dt2$minP.min > 0.45] #260
-pval05 = dt2[dt2$minP.min > 0.5] #198
-pval055 = dt2[dt2$minP.min > 0.55] #141
-pval06 = dt2[dt2$minP.min > 0.6] #105
-pval065 = dt2[dt2$minP.min > 0.65] #75
-pval07 = dt2[dt2$minP.min > 0.7] #57
-pval075 = dt2[dt2$minP.min > 0.75] #37
-pval08 = dt2[dt2$minP.min > 0.8] #19
-pval085 = dt2[dt2$minP.min > 0.85] #9
-pval09 = dt2[dt2$minP.min > 0.9] #4
+pval01 = dt2[dt2$minP.min > 0.1] 
+pval015 = dt2[dt2$minP.min > 0.15] 
+pval02 = dt2[dt2$minP.min > 0.2] 
+pval025 = dt2[dt2$minP.min > 0.25] 
+pval03 = dt2[dt2$minP.min > 0.3] 
+pval035 = dt2[dt2$minP.min > 0.35] 
+pval04 = dt2[dt2$minP.min > 0.4] 
+pval045 = dt2[dt2$minP.min > 0.45] 
+pval05 = dt2[dt2$minP.min > 0.5] 
+pval055 = dt2[dt2$minP.min > 0.55] 
+pval06 = dt2[dt2$minP.min > 0.6] 
+pval065 = dt2[dt2$minP.min > 0.65] 
+pval07 = dt2[dt2$minP.min > 0.7] 
+pval075 = dt2[dt2$minP.min > 0.75] 
+pval08 = dt2[dt2$minP.min > 0.8] 
+pval085 = dt2[dt2$minP.min > 0.85] 
+pval09 = dt2[dt2$minP.min > 0.9] 
 
 fwrite(pval, 'pval_forPPI.txt', row.names = FALSE)
 fwrite(pval01, 'pval01_forPPI.txt', row.names = FALSE)
@@ -435,6 +439,21 @@ fwrite(data, 'Genes_evangel_and_insignif.txt', row.names = FALSE)
 
 #Identify gene list to undergo PPI filtering in later code
 dataforPPI <- select(data, Gene, insignif)
+
+get_range <- function(x) {
+  x <- type.convert(str_split(x, ",\\s+", simplify = TRUE), na.strings = c(".", "NA"))
+  x <- t(apply(x, 1L, function(i) {
+    i <- i[!is.na(i)]
+    if (length(i) < 1L) c(NA_real_, NA_real_) else range(i)
+  }))
+  dimnames(x)[[2L]] <- c("min", "max")
+  x
+}
+
+dataforPPI <- dataforPPI[, c(Gene = .(Gene), lapply(.SD, get_range)), .SDcols = -"Gene"]
+dataforPPI <- select(dataforPPI, Gene, insignif.max)
+colnames(dataforPPI)[2] <- 'insignif'
+
 fwrite(dataforPPI, 'Genelist_forPPI.txt', row.names = FALSE)
 ```
 
@@ -445,8 +464,8 @@ gc()
 ```
 
     ##             used   (Mb) gc trigger    (Mb) limit (Mb)   max used    (Mb)
-    ## Ncells   3358773  179.4   37466002  2001.0         NA   46832502  2501.2
-    ## Vcells 142770252 1089.3 3300956789 25184.4      65536 4125584585 31475.8
+    ## Ncells   3455240  184.6   37684940  2012.6         NA   47106174  2515.8
+    ## Vcells 142920123 1090.4 3342379942 25500.4      65536 4177222844 31869.7
 
 ``` r
 memory.limit(9999999999)
@@ -474,6 +493,7 @@ colnames(protein_info)[2] <- 'Gene'
 protein_info <- select(protein_info, Gene, protein_id)
 PPIs <- rbind(protein_alias, protein_info)
 
+
 #Total data downloaded from string including all scores per interactions loaded:
 
 proteindf <- fread("9606.protein.links.full.v11.0.txt")
@@ -500,11 +520,11 @@ colnames(proteindf)[1] <- "STRING_id1"
 colnames(proteindf)[2] <- "STRING_id2"
 
 #Interaction scores only from coexpression, experiments and database used:
-protein_df <- select(proteindf, STRING_id1, STRING_id2, coexpression,
-                     experiments, database)
-protein_df <- filter(protein_df, experiments != 0 | coexpression !=0 | database !=0)
-protein_df$Max <- apply(protein_df[,3:5], 1, FUN = max)
-protein_df <- filter(protein_df, Max >= 400) 
+protein_df <- select(proteindf, STRING_id1, STRING_id2, 
+                     experiments)
+protein_df <- filter(protein_df, experiments != 0)
+protein_df$Max <- apply(protein_df[,3], 1, FUN = max)
+protein_df <- filter(protein_df, Max >= 150) 
 
 protein_df <- select(protein_df, STRING_id1, STRING_id2)
 ```
@@ -532,11 +552,11 @@ head(string1_df_genes)
 
     ##    Gene1           STRING_id1           STRING_id2
     ## 1:   7SK                 <NA>                 <NA>
-    ## 2:  A1BG 9606.ENSP00000263100 9606.ENSP00000296028
-    ## 3:  A1BG 9606.ENSP00000263100 9606.ENSP00000450731
-    ## 4:  A1BG 9606.ENSP00000263100 9606.ENSP00000358307
-    ## 5:  A1BG 9606.ENSP00000263100 9606.ENSP00000315130
-    ## 6:  A1BG 9606.ENSP00000263100 9606.ENSP00000343204
+    ## 2:  A1BG 9606.ENSP00000263100 9606.ENSP00000351697
+    ## 3:  A1BG 9606.ENSP00000263100 9606.ENSP00000284116
+    ## 4:  A1BG 9606.ENSP00000263100 9606.ENSP00000294119
+    ## 5:  A1BG 9606.ENSP00000263100 9606.ENSP00000384792
+    ## 6:  A1BG 9606.ENSP00000263100 9606.ENSP00000416515
 
 ``` r
 #Finding HGNC gene symbols for other STRING id column:
@@ -554,11 +574,7 @@ all_string_IDs <- select(all_string_IDs, STRING_id1, Gene1, STRING_id2, Gene)
 colnames(all_string_IDs)[4] <- 'Gene2'
 all_string_IDs <- filter(all_string_IDs, !is.na(STRING_id1))
 
-#fwrite(all_string_IDs, 'all_STRING_IDs400.txt', row.names = FALSE)
-
-#Collapsing interactors to be listed per gene in each row
-#Each gene in Gene1 column needs condensing/collapsing to one unique gene per row in a column, with all that gene's interactors listed in another columnn
-#E.g. Genes in above output example needs to be condensed to 1 row with all Gene2 interactors listed for it 
+fwrite(all_string_IDs, 'STRING_IDs_Experimental_150.txt', row.names = FALSE)
 
 #Compress gene's interactors for first column:
 genes1 <- all_string_IDs[, c(2,4)]
@@ -568,23 +584,24 @@ genes1 <- genes1[,lapply(.SD, function(col) paste(col, collapse =", ")),
                  by=.(Gene1)]
 genes1$Gene2 <- gsub("NA,", "", genes1$Gene2)
 
+
 head(genes1)
 ```
 
-    ##      Gene1
-    ## 1:    A1BG
-    ## 2:    A1CF
-    ## 3:     A2M
-    ## 4: A3GALT2
-    ## 5:  A4GALT
-    ## 6:   A4GNT
-    ##                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         Gene2
-    ## 1:                                                                                                                                                                               PPBP, VTI1B, NHLRC2, CLU, TRPM2, JAK1, VWF, SERPINF2, IGF2, TGFB1, VEGFB, ISLR, SCCPDH, GAS6, VEGFC, SRGN, KCMF1, OLA1, FGB, SERPINA1, HRG, AKT1, ALB, GRB2, APP, IGF1, PLG, KNG1, GTPBP2, ACTN1, HGF, ACTN4, HCK, GAB2, SPARC, F13A1, F5, SERPINE1, PDGFB, HGF, SOS1, VEGFA, CFD, TGFB3, ORM2, A2M, THBS1, PROS1, HGF, IL6, LEFTY2, IL6R, QSOX1, TEX264, EGF, PCYOX1L, ORM1, ALDOA, ACTN2, PIK3CA, SERPING1, GAB1, PTPN11, FERMT3, IL6ST, EPO, PF4, AHSG, LMO4, TGFB2, FAM49B, FGG, FGA, MMRN1, FN1, PIK3R1
-    ## 2:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        APOBEC3G, APOBEC3B, APOBEC3A, APOBEC3C, PSMG2, APOBEC4, APOBEC3H, PSMG3, APOBEC1, APOBEC2, APOBEC3F
-    ## 3: CDC42, TGFB1, VEGFC, SRGN, RHOC, RHOD, ALB, PLG, KNG1, IL1B, RHOQ, HGF, RHOU, F13A1, F5, PDGFB, CFD, ORM2, RHOT1, MMP10, MME, MMP12, IL10, EPO, AHSG, RHOG, MMP2, A1BG, PPBP, CLU, TRPM2, ISLR, RHOH, FGB, TGIF1, SERPINA1, MMP13, RHOT2, APOA1, RHOV, RHOJ, TEX264, PCYOX1L, ALDOA, RHOB, MMP9, MMP7, FN1, MMP11, VTI1B, IGF2, VEGFB, GAS6, HRG, IGF1, MMP19, GTPBP2, RAC2, RHOA, APC, PC, PROC, C1QBP, SERPINE1, TGFB3, RHOBTB1, THBS1, PROS1, LEFTY2, QSOX1, RHOF, EGF, ORM1, ACTN2, KLK3, KLKB1, RHOBTB2, FGG, FGA, NHLRC2, VWF, SERPINF2, CLGN, MMP1, SCCPDH, OLA1, KLK3, RAC1, APP, ACTN1, ACTN4, SPARC, VEGFA, MMP20, RAC3, MMP8, SERPING1, FERMT3, PF4, MMP3, TGFB2, FAM49B, MMRN1
-    ## 4:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    B3GALNT1, B4GALT6, GLB1
-    ## 5:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ABHD17B, B3GALNT1, B4GALT6, GLB1, B4GALT2, HEXA, B4GALT1, B4GALT4, HEXB, B4GALT3
-    ## 6:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        MUC13, MUC5AC, MUC17, MUC1, PEMT, MUCL1, MUC21, MUC7, MUC5B, MUC15, MUC4, MUC6, MUC12, MUC3A, MUC16
+    ##     Gene1
+    ## 1:   A1BG
+    ## 2:   A1CF
+    ## 3:    A2M
+    ## 4:  A2ML1
+    ## 5: A4GALT
+    ## 6:  A4GNT
+    ##                                                                                                                                                                                                                                                                                  Gene2
+    ## 1:                                                                                                                                                                                         REV3L, GDPD1, UBXN1, WDR62, FDXR, CRISP3, KCMF1, PSME4, ZBTB40, RNF123, UBR4, GLIPR1, UBAC1
+    ## 2:                                                                                                                                                                                                             SDPR, FBP2, KHSRP, PSMG2, EIF4G1, PSMG3, CELF2, APOBEC1, TNPO2, SYNCRIP
+    ## 3: GDPD1, KLK13, AMBP, ADAMTS7, IL1B, PDGFB, IL10, CDK7, ADAM19, MMP2, ADAMTS12, LCAT, TGIF1, PZP, APOE, HAPLN3, ANXA6, NGF, LEP, ADAMTS1, HSPA5, MYOC, KLK2, PTX3, MAPK6, LRP1, IL4, TGFBI, PRADC1, METRN, CELA1, SPACA3, HIPK1, KLK3, LYZ, APP, PAEP, B2M, METRNL, CTSB, CPB2, LOXL1
+    ## 4:                                                                                                                                                                                                                                          L2HGDH, ECH1, THRA, ZFAND4, FCRL5, UGT1A10
+    ## 5:                                                                                                                                                                                                                                                ABHD17B, ABHD14A, ICK, PTGFRN, FCGRT
+    ## 6:                                                                                                                                                                                                                     ICK, FAM3C, IMPA2, ARF5, ABHD14A, FAM213A, JMJD8, RNF167, FANK1
 
 ``` r
 #Compress gene's interactors for second column:
@@ -606,14 +623,14 @@ PPI_df$interactors <- sapply(PPI_df$interactors , function(x) paste(unique(unlis
 
 interactors <- select(PPI_df, Gene, interactors)
 
-fwrite(interactors, "PPI400_gene_interactions_evangelou.txt", sep="\t", row.names = F, quote = F)
+fwrite(interactors, "150_Experimental_interactions.txt", sep="\t", row.names = F, quote = F)
 ```
 
 ### PPI filtering of insignificant genes by identifying genes with no close interactions with known blood pressure genes
 
 -   Known blood pressure genes identified as such if they have
     interacting blood pressure drugs or mechanisms (provided in
-    Genelist\_drug\_and\_databases.txt file).
+    Genelist_drug_and_databases.txt file).
 -   Genes with no direct PPIs with known blood pressures or no secondary
     PPIs (interactors interacting with known blood pressure gene
     interactors) selected as final geneset of least likely/insignificant
@@ -623,13 +640,22 @@ fwrite(interactors, "PPI400_gene_interactions_evangelou.txt", sep="\t", row.name
 ``` r
 rm(list = ls())
 
-Genelist <- fread("Genelist_forPPI.txt")
-interactors <- fread("PPI400_gene_interactions_evangelou.txt")
+
+Gene_list <- fread("Genelist_forPPI.txt")
+gene_types <- fread('hg19Rel92_AllgeneTypes_0kb.txt')
+colnames(gene_types)[c(4,5)] <- c('Gene', 'Type')
+gene_types <- select(gene_types, Gene, Type)
+Genelist <- merge(Gene_list, gene_types, by='Gene', all.x=TRUE)
+Genelist <- filter(Genelist, Type == 'protein_coding')
+LL_count <- filter(Genelist, !is.na(insignif))
+
+
+interactors <- fread("150_Experimental_interactions.txt")
 drugdf <- fread("Genelist_drug_and_databases.txt")
 textminingdf <- fread('genie_textminingBP.txt')
 colnames(textminingdf)[3] <-'Gene'
 genes_to_label <- Reduce(function(x, y) merge(x, y, by = 'Gene', all.x = TRUE),
-                       list(Genelist, drugdf, textminingdf))
+                         list(Genelist, drugdf, textminingdf))
 genes_to_label <- select(genes_to_label, Gene, BPmed, Mechanism,
                          SideeffectFreq, Rank, insignif)
 
@@ -641,7 +667,6 @@ genes_to_label[, BP_templabel := fcase(
 bp_labels <- select(genes_to_label, Gene, BP_templabel)
 #Genes with BP drug or BP mechanism (known BP genes)
 ml_df <- filter(bp_labels, BP_templabel == "most likely")
-#Genes at BP loci with all variants > 0.8 LD
 bp_genes <- fread('Genes_BPloci.bed')
 colnames(bp_genes)[12] <-'CP'
 colnames(bp_genes)[16] <-'Gene'
@@ -654,6 +679,7 @@ bp_genes3 <- select(bp_genes3, Gene)
 bp_genes3 <- select(bp_genes, Gene)
 
 ml_df <- rbind(ml_df, bp_genes3, fill=TRUE)
+
 ml_df[is.na(ml_df)] <- "most likely"
 ml_df <- ml_df[!duplicated(ml_df$Gene), ] #3,786 genes
 
@@ -679,10 +705,12 @@ secondary_bp_PPI <- merge(interactors_bp_PPI, interactors, by = 'Gene', all.x = 
 #Directly connected PPIs with known BP genes (matched_direct_interactor column)
 #Least likely genes that interact with a known BP gene
 ll_df$matched_direct_interactor <-  ll_df$Gene %in% unlist(strsplit
-                                        (bp_genes_PPI$interactors,", "))
+                                                           (bp_genes_PPI$interactors,
+                                                             ", "))
 
 ll_df$matched_secondary_interactor <- ll_df$Gene %in% unlist(strsplit
-                                          (secondary_bp_PPI$interactors, ", "))
+                                                             (secondary_bp_PPI$interactors,
+                                                               ", "))
 
 string_ids <- fread('9606.protein.info.v11.0.txt')
 colnames(string_ids)[2] <- 'Gene'
@@ -690,21 +718,20 @@ ll_matches <- ll_df[Gene %in% string_ids$Gene]
 
 #Select insignificant genes with no direct or secondary BP gene interactors
 
-bp_false_interactions1 <- filter(ll_df, matched_direct_interactor == "FALSE")
-bp_false_interactions2 <- filter(ll_df, matched_direct_interactor == "FALSE"
-                                  & matched_secondary_interactor == "FALSE") 
+exp150_false_interactions1 <- filter(ll_df, matched_direct_interactor == "FALSE")
 
-ll_matches1 <- bp_false_interactions1[Gene %in% ll_matches$Gene]
-ll_matches2 <- bp_false_interactions2[Gene %in% ll_matches$Gene]
+exp150_false_interactions2 <- filter(ll_df, matched_direct_interactor == "FALSE"
+                                 & matched_secondary_interactor == "FALSE") 
 
 bp_true_interactions1 <- filter(ll_df, matched_direct_interactor == "TRUE") 
 bp_true_interactions2 <- filter(ll_df, matched_secondary_interactor == "TRUE") 
 
+
 #read in genes with >0.1 r2 with BP loci to ensure genes are filtered:
 ld_genes <- fread('LD01_genes.txt')
-no_ld_genes <- subset(bp_false_interactions2, !(Gene %in% ld_genes$Gene))
+exp150_no_ld_genes <- subset(exp150_false_interactions2, !(Gene %in% ld_genes$Gene))
 
-write.table(no_ld_genes,"pval07_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
+write.table(exp150_no_ld_genes,"150_Experimental_pval015_filtered_unassociated_genes.txt",sep="\t", row.names = F, quote = F)
 ```
 
 ## <a id="5. Variant-level feature processing"></a>5. Variant-level feature processing
@@ -714,15 +741,13 @@ write.table(no_ld_genes,"pval07_filtered_unassociated_genes.txt",sep="\t", row.n
 
 ``` r
 df <- fread('Genes_evangel_and_insignif.txt')
-ppifiltered1 <- fread('pval07_filtered_unassociated_genes.txt')
+ppifiltered1 <- fread('150_Experimental_pval015_filtered_unassociated_genes.txt', select=c('Gene'))
+ppifiltered1$insignif <- 1
 
 df$insignif[df$insignif==""] <- NA
 df1 <- filter(df, is.na(insignif))
-df2 <- filter(df, insignif == 1)
-df2 <- df2[Gene %in% ppifiltered1$Gene]
-df2 <- df2[!duplicated(df2$Gene), ]
 
-data <- rbind(df1, df2)
+data <- rbind(df1, ppifiltered1, fill=TRUE)
 data <- data[!duplicated(data$Gene), ]
 
 #Select min or max value for each feature per gene between compressed values
@@ -858,7 +883,7 @@ df_all_features <- df_new %>% select_if(~!all(is.na(.)))
 insignif <- select(data, Gene, insignif)
 df_all_features <- merge(df_all_features, insignif, all.x = TRUE)
 #Write final file:
-fwrite(df_all_features, "pval07_genelist_filtered_evangelou.txt", 
+fwrite(df_all_features, "pval015_genelist_filtered_evangelou.txt", 
        sep = "\t", row.names = FALSE)
 
 head(df_all_features)
@@ -871,13 +896,13 @@ head(df_all_features)
     ## 4:   ABCC9        NA                    NA                   NA       NA
     ## 5: ABHD16A        NA                    NA                   NA       NA
     ## 6: ABHD17C        NA                    NA                   NA       NA
-    ##    minP.min.min minP.min.max wgEncodeBroadHmmHuvecHMM.count betamax insignif
-    ## 1:           NA           NA                             24 -0.3163     <NA>
-    ## 2:           NA           NA                             31 -0.3777     <NA>
-    ## 3:           NA           NA                            899  0.4599     <NA>
-    ## 4:           NA           NA                             58 -0.4131     <NA>
-    ## 5:           NA           NA                            272  0.3816     <NA>
-    ## 6:           NA           NA                            233  0.3413     <NA>
+    ##    wgEncodeBroadHmmHuvecHMM.count betamax insignif
+    ## 1:                            250  0.7121     <NA>
+    ## 2:                              7 -0.4107     <NA>
+    ## 3:                            280 -0.4145     <NA>
+    ## 4:                             56  0.4561     <NA>
+    ## 5:                            671 -0.3551     <NA>
+    ## 6:                             52  0.4113     <NA>
 
 ## <a id="6. Feature pre-procesing"></a>6. Feature pre-procesing
 
@@ -1082,7 +1107,7 @@ fwrite(CpGcount, "Genes_CpG.txt")
 head(CpGcount)
 ```
 
-    ## # A tibble: 6 x 2
+    ## # A tibble: 6 × 2
     ##   Gene     CpGcount
     ##   <chr>       <dbl>
     ## 1 A1BG-AS1       12
@@ -1469,7 +1494,7 @@ head(deepsea)
 
 ### GTEx tissue fold change data merged to combine all individual tissue files
 
-Downloaded GTEx eQTL data (GTEx\_Analysis\_v8\_eQTL.tar) and unzipped to
+Downloaded GTEx eQTL data (GTEx_Analysis_v8_eQTL.tar) and unzipped to
 get egene files (\*.egenes.txt.gz files contain data for all genes
 tested) 1. Read all files into environment and select only Gene name and
 FC columns 2. Rename columns 3. Merge datasets together with genelist
@@ -1542,9 +1567,9 @@ colnames(Vagina.v8.egenes.txt)[2] <- 'Vagina_GTExFC'
 colnames(Whole_Blood.v8.egenes.txt)[2] <- 'Whole_Blood_GTExFC'
 
 rm(temp, nm, nms, my_func, i, e)
-setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/Data Preprocessing")
+setwd("~/Documents/PhD Year 2/BP-GWAS-Predict/All GWAS data sorting")
 
-genes <-  fread("pval07_genelist_filtered_evangelou.txt")
+genes <-  fread("pval015_genelist_filtered_evangelou.txt")
 genes <- select(genes, Gene)
 colnames(genes)[1] <- 'gene_name'
 
@@ -1613,7 +1638,7 @@ colnames(GTEx_df)[1] <- 'Gene'
 dim(GTEx_df)
 ```
 
-    ## [1] 2047   50
+    ## [1] 2097   50
 
 ``` r
 names(GTEx_df)
@@ -1674,7 +1699,7 @@ names(GTEx_df)
 
 ``` r
 #Load all collected feature data
-df1 <- fread('pval07_genelist_filtered_evangelou.txt')
+df1 <- fread('pval015_genelist_filtered_evangelou.txt')
 df2 <- fread('GTEx_TPM.txt')
 df2 <- df2[,2:56] #For GTEx median TPM data
 df3 <- fread('GTEx_FC.txt')
@@ -1755,16 +1780,16 @@ testbp3 <- filter(all_features, BPlabel == 'most likely')
 training <- filter(all_features, BPlabel != 'unknown')
 unknown <- filter(all_features, BPlabel == 'unknown')
 
-write.table(training,"pval07_BP_training.txt", sep = "\t", row.names = F, quote = F)
-write.table(unknown,"pval07_BP_unknown.txt", sep = "\t", row.names = F, quote = F)
+write.table(training,"pval015_BP_training.txt", sep = "\t", row.names = F, quote = F)
+write.table(unknown,"pval015_BP_unknown.txt", sep = "\t", row.names = F, quote = F)
 
-write.table(all_features,"pval07_all_genes_all_features.txt", sep = "\t", row.names = F, quote = F)
+write.table(all_features,"pval015_all_genes_all_features.txt", sep = "\t", row.names = F, quote = F)
 
 
 dim(training)
 ```
 
-    ## [1] 243 142
+    ## [1] 293 140
 
 ``` r
 names(training)
@@ -1775,143 +1800,141 @@ names(training)
     ##   [3] "MetaSVM_rankscore.max"                            
     ##   [4] "MetaLR_rankscore.max"                             
     ##   [5] "MCAP.max"                                         
-    ##   [6] "minP.min.min"                                     
-    ##   [7] "minP.min.max"                                     
-    ##   [8] "wgEncodeBroadHmmHuvecHMM.count"                   
-    ##   [9] "betamax"                                          
-    ##  [10] "logpval_gwascatalog"                              
-    ##  [11] "Adipose - Subcutaneous_GTExTPM"                   
-    ##  [12] "Adipose - Visceral (Omentum)_GTExTPM"             
-    ##  [13] "Adrenal Gland_GTExTPM"                            
-    ##  [14] "Artery - Aorta_GTExTPM"                           
-    ##  [15] "Artery - Coronary_GTExTPM"                        
-    ##  [16] "Artery - Tibial_GTExTPM"                          
-    ##  [17] "Bladder_GTExTPM"                                  
-    ##  [18] "Brain - Amygdala_GTExTPM"                         
-    ##  [19] "Brain - Anterior cingulate cortex (BA24)_GTExTPM" 
-    ##  [20] "Brain - Caudate (basal ganglia)_GTExTPM"          
-    ##  [21] "Brain - Cerebellar Hemisphere_GTExTPM"            
-    ##  [22] "Brain - Cerebellum_GTExTPM"                       
-    ##  [23] "Brain - Cortex_GTExTPM"                           
-    ##  [24] "Brain - Frontal Cortex (BA9)_GTExTPM"             
-    ##  [25] "Brain - Hippocampus_GTExTPM"                      
-    ##  [26] "Brain - Hypothalamus_GTExTPM"                     
-    ##  [27] "Brain - Nucleus accumbens (basal ganglia)_GTExTPM"
-    ##  [28] "Brain - Putamen (basal ganglia)_GTExTPM"          
-    ##  [29] "Brain - Spinal cord (cervical c-1)_GTExTPM"       
-    ##  [30] "Brain - Substantia nigra_GTExTPM"                 
-    ##  [31] "Breast - Mammary Tissue_GTExTPM"                  
-    ##  [32] "Cells - Cultured fibroblasts_GTExTPM"             
-    ##  [33] "Cells - EBV-transformed lymphocytes_GTExTPM"      
-    ##  [34] "Cervix - Ectocervix_GTExTPM"                      
-    ##  [35] "Cervix - Endocervix_GTExTPM"                      
-    ##  [36] "Colon - Sigmoid_GTExTPM"                          
-    ##  [37] "Colon - Transverse_GTExTPM"                       
-    ##  [38] "Esophagus - Gastroesophageal Junction_GTExTPM"    
-    ##  [39] "Esophagus - Mucosa_GTExTPM"                       
-    ##  [40] "Esophagus - Muscularis_GTExTPM"                   
-    ##  [41] "Fallopian Tube_GTExTPM"                           
-    ##  [42] "Heart - Atrial Appendage_GTExTPM"                 
-    ##  [43] "Heart - Left Ventricle_GTExTPM"                   
-    ##  [44] "Kidney - Cortex_GTExTPM"                          
-    ##  [45] "Kidney - Medulla_GTExTPM"                         
-    ##  [46] "Liver_GTExTPM"                                    
-    ##  [47] "Lung_GTExTPM"                                     
-    ##  [48] "Minor Salivary Gland_GTExTPM"                     
-    ##  [49] "Muscle - Skeletal_GTExTPM"                        
-    ##  [50] "Nerve - Tibial_GTExTPM"                           
-    ##  [51] "Ovary_GTExTPM"                                    
-    ##  [52] "Pancreas_GTExTPM"                                 
-    ##  [53] "Pituitary_GTExTPM"                                
-    ##  [54] "Prostate_GTExTPM"                                 
-    ##  [55] "Skin - Not Sun Exposed (Suprapubic)_GTExTPM"      
-    ##  [56] "Skin - Sun Exposed (Lower leg)_GTExTPM"           
-    ##  [57] "Small Intestine - Terminal Ileum_GTExTPM"         
-    ##  [58] "Spleen_GTExTPM"                                   
-    ##  [59] "Stomach_GTExTPM"                                  
-    ##  [60] "Testis_GTExTPM"                                   
-    ##  [61] "Thyroid_GTExTPM"                                  
-    ##  [62] "Uterus_GTExTPM"                                   
-    ##  [63] "Vagina_GTExTPM"                                   
-    ##  [64] "Whole Blood_GTExTPM"                              
-    ##  [65] "Adipose_Subcutaneous_GTExFC"                      
-    ##  [66] "Adipose_Visceral_Omentum_GTExFC"                  
-    ##  [67] "Adrenal_Gland_GTExFC"                             
-    ##  [68] "Artery_Aorta_GTExFC"                              
-    ##  [69] "Artery_Coronary_GTExFC"                           
-    ##  [70] "Artery_Tibial_GTExFC"                             
-    ##  [71] "Brain_Amygdala_GTExFC"                            
-    ##  [72] "Brain_Anterior_cingulate_cortex_BA24_GTExFC"      
-    ##  [73] "Brain_Caudate_basal_ganglia_GTExFC"               
-    ##  [74] "Brain_Cerebellar_Hemisphere_GTExFC"               
-    ##  [75] "Brain_Cerebellum_GTExFC"                          
-    ##  [76] "Brain_Cortex_GTExFC"                              
-    ##  [77] "Brain_Frontal_Cortex_BA9_GTExFC"                  
-    ##  [78] "Brain_Hippocampus_GTExFC"                         
-    ##  [79] "Brain_Hypothalamus_GTExFC"                        
-    ##  [80] "Brain_Nucleus_accumbens_basal_ganglia_GTExFC"     
-    ##  [81] "Brain_Putamen_basal_ganglia_GTExFC"               
-    ##  [82] "`Brain_Spinal_cord_cervical_c-1`_GTExFC"          
-    ##  [83] "Brain_Substantia_nigra_GTExFC"                    
-    ##  [84] "Breast_Mammary_Tissue_GTExFC"                     
-    ##  [85] "Cells_Cultured_fibroblasts_GTExFC"                
-    ##  [86] "`Cells_EBV-transformed_lymphocytes`_GTExFC"       
-    ##  [87] "Colon_Sigmoid_GTExFC"                             
-    ##  [88] "Colon_Transverse_GTExFC"                          
-    ##  [89] "Esophagus_Gastroesophageal_Junction_GTExFC"       
-    ##  [90] "Esophagus_Mucosa_GTExFC"                          
-    ##  [91] "Esophagus_Muscularis_GTExFC"                      
-    ##  [92] "Heart_Atrial_Appendage_GTExFC"                    
-    ##  [93] "Heart_Left_Ventricle_GTExFC"                      
-    ##  [94] "Kidney_Cortex_GTExFC"                             
-    ##  [95] "Liver_GTExFC"                                     
-    ##  [96] "Lung_GTExFC"                                      
-    ##  [97] "Minor_Salivary_Gland_GTExFC"                      
-    ##  [98] "Muscle_Skeletal_GTExFC"                           
-    ##  [99] "Nerve_Tibial_GTExFC"                              
-    ## [100] "Ovary_GTExFC"                                     
-    ## [101] "Pancreas_GTExFC"                                  
-    ## [102] "Pituitary_GTExFC"                                 
-    ## [103] "Prostate_GTExFC"                                  
-    ## [104] "Skin_Not_Sun_Exposed_Suprapubic_GTExFC"           
-    ## [105] "Skin_Sun_Exposed_Lower_leg_GTExFC"                
-    ## [106] "Small_Intestine_Terminal_Ileum_GTExFC"            
-    ## [107] "Spleen_GTExFC"                                    
-    ## [108] "Stomach_GTExFC"                                   
-    ## [109] "Testis_GTExFC"                                    
-    ## [110] "Thyroid_GTExFC"                                   
-    ## [111] "Uterus_GTExFC"                                    
-    ## [112] "Vagina_GTExFC"                                    
-    ## [113] "Whole_Blood_GTExFC"                               
-    ## [114] "DeepSEA_Functional_Significance"                  
-    ## [115] "ExomiserScore"                                    
-    ## [116] "RVIS_Score"                                       
-    ## [117] "ubiquitousness.index.max"                         
-    ## [118] "CpGcount"                                         
-    ## [119] "DNaseCluster_count"                               
-    ## [120] "EnhancerCount"                                    
-    ## [121] "SDI"                                              
-    ## [122] "H3k4me1_count"                                    
-    ## [123] "SignalValue_H3k4me1_median"                       
-    ## [124] "H3k4me3_count"                                    
-    ## [125] "SignalValue_H3k4me3_median"                       
-    ## [126] "H3k27Ac_count"                                    
-    ## [127] "SignalValue_H3k27Ac_median"                       
-    ## [128] "pLI_ExAC"                                         
-    ## [129] "CNVs_ExAC"                                        
-    ## [130] "Gene_length"                                      
-    ## [131] "MGI_Gene"                                         
-    ## [132] "Ratmodel_Gene"                                    
-    ## [133] "GDI_Score"                                        
-    ## [134] "GTEx_signif_sexbias"                              
-    ## [135] "HIPred"                                           
-    ## [136] "IPA_BP"                                           
-    ## [137] "IPA_Activity"                                     
-    ## [138] "O_GlcNAc_Score"                                   
-    ## [139] "EMS_Max"                                          
-    ## [140] "PharmGKB_Score"                                   
-    ## [141] "ExAc_constraint_obs_exp"                          
-    ## [142] "BPlabel"
+    ##   [6] "wgEncodeBroadHmmHuvecHMM.count"                   
+    ##   [7] "betamax"                                          
+    ##   [8] "logpval_gwascatalog"                              
+    ##   [9] "Adipose - Subcutaneous_GTExTPM"                   
+    ##  [10] "Adipose - Visceral (Omentum)_GTExTPM"             
+    ##  [11] "Adrenal Gland_GTExTPM"                            
+    ##  [12] "Artery - Aorta_GTExTPM"                           
+    ##  [13] "Artery - Coronary_GTExTPM"                        
+    ##  [14] "Artery - Tibial_GTExTPM"                          
+    ##  [15] "Bladder_GTExTPM"                                  
+    ##  [16] "Brain - Amygdala_GTExTPM"                         
+    ##  [17] "Brain - Anterior cingulate cortex (BA24)_GTExTPM" 
+    ##  [18] "Brain - Caudate (basal ganglia)_GTExTPM"          
+    ##  [19] "Brain - Cerebellar Hemisphere_GTExTPM"            
+    ##  [20] "Brain - Cerebellum_GTExTPM"                       
+    ##  [21] "Brain - Cortex_GTExTPM"                           
+    ##  [22] "Brain - Frontal Cortex (BA9)_GTExTPM"             
+    ##  [23] "Brain - Hippocampus_GTExTPM"                      
+    ##  [24] "Brain - Hypothalamus_GTExTPM"                     
+    ##  [25] "Brain - Nucleus accumbens (basal ganglia)_GTExTPM"
+    ##  [26] "Brain - Putamen (basal ganglia)_GTExTPM"          
+    ##  [27] "Brain - Spinal cord (cervical c-1)_GTExTPM"       
+    ##  [28] "Brain - Substantia nigra_GTExTPM"                 
+    ##  [29] "Breast - Mammary Tissue_GTExTPM"                  
+    ##  [30] "Cells - Cultured fibroblasts_GTExTPM"             
+    ##  [31] "Cells - EBV-transformed lymphocytes_GTExTPM"      
+    ##  [32] "Cervix - Ectocervix_GTExTPM"                      
+    ##  [33] "Cervix - Endocervix_GTExTPM"                      
+    ##  [34] "Colon - Sigmoid_GTExTPM"                          
+    ##  [35] "Colon - Transverse_GTExTPM"                       
+    ##  [36] "Esophagus - Gastroesophageal Junction_GTExTPM"    
+    ##  [37] "Esophagus - Mucosa_GTExTPM"                       
+    ##  [38] "Esophagus - Muscularis_GTExTPM"                   
+    ##  [39] "Fallopian Tube_GTExTPM"                           
+    ##  [40] "Heart - Atrial Appendage_GTExTPM"                 
+    ##  [41] "Heart - Left Ventricle_GTExTPM"                   
+    ##  [42] "Kidney - Cortex_GTExTPM"                          
+    ##  [43] "Kidney - Medulla_GTExTPM"                         
+    ##  [44] "Liver_GTExTPM"                                    
+    ##  [45] "Lung_GTExTPM"                                     
+    ##  [46] "Minor Salivary Gland_GTExTPM"                     
+    ##  [47] "Muscle - Skeletal_GTExTPM"                        
+    ##  [48] "Nerve - Tibial_GTExTPM"                           
+    ##  [49] "Ovary_GTExTPM"                                    
+    ##  [50] "Pancreas_GTExTPM"                                 
+    ##  [51] "Pituitary_GTExTPM"                                
+    ##  [52] "Prostate_GTExTPM"                                 
+    ##  [53] "Skin - Not Sun Exposed (Suprapubic)_GTExTPM"      
+    ##  [54] "Skin - Sun Exposed (Lower leg)_GTExTPM"           
+    ##  [55] "Small Intestine - Terminal Ileum_GTExTPM"         
+    ##  [56] "Spleen_GTExTPM"                                   
+    ##  [57] "Stomach_GTExTPM"                                  
+    ##  [58] "Testis_GTExTPM"                                   
+    ##  [59] "Thyroid_GTExTPM"                                  
+    ##  [60] "Uterus_GTExTPM"                                   
+    ##  [61] "Vagina_GTExTPM"                                   
+    ##  [62] "Whole Blood_GTExTPM"                              
+    ##  [63] "Adipose_Subcutaneous_GTExFC"                      
+    ##  [64] "Adipose_Visceral_Omentum_GTExFC"                  
+    ##  [65] "Adrenal_Gland_GTExFC"                             
+    ##  [66] "Artery_Aorta_GTExFC"                              
+    ##  [67] "Artery_Coronary_GTExFC"                           
+    ##  [68] "Artery_Tibial_GTExFC"                             
+    ##  [69] "Brain_Amygdala_GTExFC"                            
+    ##  [70] "Brain_Anterior_cingulate_cortex_BA24_GTExFC"      
+    ##  [71] "Brain_Caudate_basal_ganglia_GTExFC"               
+    ##  [72] "Brain_Cerebellar_Hemisphere_GTExFC"               
+    ##  [73] "Brain_Cerebellum_GTExFC"                          
+    ##  [74] "Brain_Cortex_GTExFC"                              
+    ##  [75] "Brain_Frontal_Cortex_BA9_GTExFC"                  
+    ##  [76] "Brain_Hippocampus_GTExFC"                         
+    ##  [77] "Brain_Hypothalamus_GTExFC"                        
+    ##  [78] "Brain_Nucleus_accumbens_basal_ganglia_GTExFC"     
+    ##  [79] "Brain_Putamen_basal_ganglia_GTExFC"               
+    ##  [80] "`Brain_Spinal_cord_cervical_c-1`_GTExFC"          
+    ##  [81] "Brain_Substantia_nigra_GTExFC"                    
+    ##  [82] "Breast_Mammary_Tissue_GTExFC"                     
+    ##  [83] "Cells_Cultured_fibroblasts_GTExFC"                
+    ##  [84] "`Cells_EBV-transformed_lymphocytes`_GTExFC"       
+    ##  [85] "Colon_Sigmoid_GTExFC"                             
+    ##  [86] "Colon_Transverse_GTExFC"                          
+    ##  [87] "Esophagus_Gastroesophageal_Junction_GTExFC"       
+    ##  [88] "Esophagus_Mucosa_GTExFC"                          
+    ##  [89] "Esophagus_Muscularis_GTExFC"                      
+    ##  [90] "Heart_Atrial_Appendage_GTExFC"                    
+    ##  [91] "Heart_Left_Ventricle_GTExFC"                      
+    ##  [92] "Kidney_Cortex_GTExFC"                             
+    ##  [93] "Liver_GTExFC"                                     
+    ##  [94] "Lung_GTExFC"                                      
+    ##  [95] "Minor_Salivary_Gland_GTExFC"                      
+    ##  [96] "Muscle_Skeletal_GTExFC"                           
+    ##  [97] "Nerve_Tibial_GTExFC"                              
+    ##  [98] "Ovary_GTExFC"                                     
+    ##  [99] "Pancreas_GTExFC"                                  
+    ## [100] "Pituitary_GTExFC"                                 
+    ## [101] "Prostate_GTExFC"                                  
+    ## [102] "Skin_Not_Sun_Exposed_Suprapubic_GTExFC"           
+    ## [103] "Skin_Sun_Exposed_Lower_leg_GTExFC"                
+    ## [104] "Small_Intestine_Terminal_Ileum_GTExFC"            
+    ## [105] "Spleen_GTExFC"                                    
+    ## [106] "Stomach_GTExFC"                                   
+    ## [107] "Testis_GTExFC"                                    
+    ## [108] "Thyroid_GTExFC"                                   
+    ## [109] "Uterus_GTExFC"                                    
+    ## [110] "Vagina_GTExFC"                                    
+    ## [111] "Whole_Blood_GTExFC"                               
+    ## [112] "DeepSEA_Functional_Significance"                  
+    ## [113] "ExomiserScore"                                    
+    ## [114] "RVIS_Score"                                       
+    ## [115] "ubiquitousness.index.max"                         
+    ## [116] "CpGcount"                                         
+    ## [117] "DNaseCluster_count"                               
+    ## [118] "EnhancerCount"                                    
+    ## [119] "SDI"                                              
+    ## [120] "H3k4me1_count"                                    
+    ## [121] "SignalValue_H3k4me1_median"                       
+    ## [122] "H3k4me3_count"                                    
+    ## [123] "SignalValue_H3k4me3_median"                       
+    ## [124] "H3k27Ac_count"                                    
+    ## [125] "SignalValue_H3k27Ac_median"                       
+    ## [126] "pLI_ExAC"                                         
+    ## [127] "CNVs_ExAC"                                        
+    ## [128] "Gene_length"                                      
+    ## [129] "MGI_Gene"                                         
+    ## [130] "Ratmodel_Gene"                                    
+    ## [131] "GDI_Score"                                        
+    ## [132] "GTEx_signif_sexbias"                              
+    ## [133] "HIPred"                                           
+    ## [134] "IPA_BP"                                           
+    ## [135] "IPA_Activity"                                     
+    ## [136] "O_GlcNAc_Score"                                   
+    ## [137] "EMS_Max"                                          
+    ## [138] "PharmGKB_Score"                                   
+    ## [139] "ExAc_constraint_obs_exp"                          
+    ## [140] "BPlabel"
 
 ## <a id="8. Gene length correlation"></a>8. Gene length correlation
 
@@ -1942,17 +1965,17 @@ print('Training data gene length correlation for variant level features:')
 print(training_table)
 ```
 
-    ##                                     Pearsons    Spearman
-    ## CpGcount                         0.982639344  0.93012577
-    ## EnhancerCount                    0.977936729  0.87336091
-    ## DNaseCluster_count               0.979353676  0.92826461
-    ## H3k4me1_count                    0.828354901  0.89176290
-    ## H3k4me3_count                    0.960562230  0.89438099
-    ## H3k27Ac_count                    0.884822420  0.89443080
-    ## betamax                          0.089449992 -0.01819947
-    ## DeepSEA_Functional_Significance -0.199802345 -0.31724520
-    ## wgEncodeBroadHmmHuvecHMM.count  -0.026281185 -0.04998501
-    ## logpval_gwascatalog             -0.007844495  0.15880829
+    ##                                      Pearsons    Spearman
+    ## CpGcount                         0.9826259497  0.89924606
+    ## EnhancerCount                    0.9780680462  0.87029991
+    ## DNaseCluster_count               0.9795220050  0.90017240
+    ## H3k4me1_count                    0.8322488066  0.88116252
+    ## H3k4me3_count                    0.9609045404  0.87476255
+    ## H3k27Ac_count                    0.8863011342  0.87776844
+    ## betamax                          0.0176626649 -0.03526183
+    ## DeepSEA_Functional_Significance -0.2026521477 -0.30311480
+    ## wgEncodeBroadHmmHuvecHMM.count   0.0242076148 -0.03672767
+    ## logpval_gwascatalog             -0.0006769054  0.17709528
 
 ``` r
 print('Total data gene length correlation for variant level features:')
@@ -1965,16 +1988,16 @@ print(all_variants_table)
 ```
 
     ##                                     Pearsons    Spearman
-    ## CpGcount                         0.001844328  0.93889698
-    ## EnhancerCount                   -0.014278287  0.91685311
-    ## DNaseCluster_count              -0.006996449  0.92664033
-    ## H3k4me1_count                   -0.006381683  0.88035982
-    ## H3k4me3_count                   -0.008400811  0.89265565
-    ## H3k27Ac_count                   -0.008881611  0.88131161
-    ## betamax                          0.054079502  0.02290267
-    ## DeepSEA_Functional_Significance -0.020260241 -0.39072042
-    ## wgEncodeBroadHmmHuvecHMM.count  -0.012480217 -0.01888992
-    ## logpval_gwascatalog              0.013689638  0.30097190
+    ## CpGcount                         0.002047835  0.93671627
+    ## EnhancerCount                   -0.014141909  0.91657671
+    ## DNaseCluster_count              -0.006560648  0.92443591
+    ## H3k4me1_count                   -0.006066534  0.88000832
+    ## H3k4me3_count                   -0.008147886  0.89163857
+    ## H3k27Ac_count                   -0.008658441  0.88019883
+    ## betamax                         -0.029448609  0.02278911
+    ## DeepSEA_Functional_Significance -0.020286745 -0.38983447
+    ## wgEncodeBroadHmmHuvecHMM.count  -0.006386533 -0.03509751
+    ## logpval_gwascatalog              0.013937852  0.30100994
 
 ## <a id="9. SessionInfo"></a>9. SessionInfo
 
@@ -1982,51 +2005,52 @@ print(all_variants_table)
 sessionInfo()
 ```
 
-    ## R version 4.0.5 (2021-03-31)
+    ## R version 4.2.1 (2022-06-23)
     ## Platform: x86_64-apple-darwin17.0 (64-bit)
-    ## Running under: macOS Big Sur 10.16
+    ## Running under: macOS Big Sur ... 10.16
     ## 
     ## Matrix products: default
-    ## BLAS:   /Library/Frameworks/R.framework/Versions/4.0/Resources/lib/libRblas.dylib
-    ## LAPACK: /Library/Frameworks/R.framework/Versions/4.0/Resources/lib/libRlapack.dylib
+    ## BLAS:   /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRblas.0.dylib
+    ## LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
     ## 
     ## locale:
     ## [1] en_GB.UTF-8/en_GB.UTF-8/en_GB.UTF-8/C/en_GB.UTF-8/en_GB.UTF-8
     ## 
     ## attached base packages:
-    ## [1] parallel  stats4    stats     graphics  grDevices utils     datasets 
-    ## [8] methods   base     
+    ## [1] stats4    stats     graphics  grDevices utils     datasets  methods  
+    ## [8] base     
     ## 
     ## other attached packages:
-    ##  [1] GenomicRanges_1.42.0  GenomeInfoDb_1.26.7   IRanges_2.24.1       
-    ##  [4] S4Vectors_0.28.1      BiocGenerics_0.36.1   matrixStats_0.59.0   
-    ##  [7] splitstackshape_1.4.8 sqldf_0.4-11          RSQLite_2.2.7        
+    ##  [1] GenomicRanges_1.48.0  GenomeInfoDb_1.32.3   IRanges_2.30.1       
+    ##  [4] S4Vectors_0.34.0      BiocGenerics_0.42.0   matrixStats_0.62.0   
+    ##  [7] splitstackshape_1.4.8 sqldf_0.4-11          RSQLite_2.2.16       
     ## [10] gsubfn_0.7            proto_1.0.0           janitor_2.1.0        
-    ## [13] data.table_1.14.0     forcats_0.5.1         purrr_0.3.4          
-    ## [16] readr_1.4.0           tidyr_1.1.3           tibble_3.1.2         
-    ## [19] ggplot2_3.3.5         tidyverse_1.3.1       dplyr_1.0.7          
-    ## [22] plyr_1.8.6            stringr_1.4.0        
+    ## [13] data.table_1.14.2     forcats_0.5.2         purrr_0.3.4          
+    ## [16] readr_2.1.2           tidyr_1.2.0           tibble_3.1.8         
+    ## [19] ggplot2_3.3.6         tidyverse_1.3.2       dplyr_1.0.9          
+    ## [22] plyr_1.8.7            stringr_1.4.1        
     ## 
     ## loaded via a namespace (and not attached):
-    ##  [1] httr_1.4.2             bit64_4.0.5            jsonlite_1.7.2        
-    ##  [4] modelr_0.1.8           assertthat_0.2.1       blob_1.2.1            
-    ##  [7] GenomeInfoDbData_1.2.4 cellranger_1.1.0       yaml_2.2.1            
-    ## [10] pillar_1.6.1           backports_1.2.1        glue_1.4.2            
-    ## [13] chron_2.3-56           digest_0.6.27          XVector_0.30.0        
-    ## [16] rvest_1.0.0            snakecase_0.11.0       colorspace_2.0-2      
-    ## [19] htmltools_0.5.1.1      pkgconfig_2.0.3        broom_0.7.8           
-    ## [22] haven_2.4.1            zlibbioc_1.36.0        scales_1.1.1          
-    ## [25] generics_0.1.0         ellipsis_0.3.2         cachem_1.0.5          
-    ## [28] withr_2.4.2            cli_3.0.0              magrittr_2.0.1        
-    ## [31] crayon_1.4.1           readxl_1.3.1           memoise_2.0.0         
-    ## [34] evaluate_0.14          fs_1.5.0               fansi_0.5.0           
-    ## [37] xml2_1.3.2             tools_4.0.5            hms_1.1.0             
-    ## [40] lifecycle_1.0.0        munsell_0.5.0          reprex_2.0.0          
-    ## [43] compiler_4.0.5         rlang_0.4.11           RCurl_1.98-1.3        
-    ## [46] grid_4.0.5             rstudioapi_0.13        bitops_1.0-7          
-    ## [49] tcltk_4.0.5            rmarkdown_2.9          gtable_0.3.0          
-    ## [52] DBI_1.1.1              R6_2.5.0               lubridate_1.7.10      
-    ## [55] knitr_1.33             fastmap_1.1.0          bit_4.0.4             
-    ## [58] utf8_1.2.1             stringi_1.7.3          Rcpp_1.0.7            
-    ## [61] vctrs_0.3.8            dbplyr_2.1.1           tidyselect_1.1.1      
-    ## [64] xfun_0.24
+    ##  [1] httr_1.4.4             bit64_4.0.5            jsonlite_1.8.0        
+    ##  [4] modelr_0.1.9           assertthat_0.2.1       blob_1.2.3            
+    ##  [7] GenomeInfoDbData_1.2.8 googlesheets4_1.0.1    cellranger_1.1.0      
+    ## [10] yaml_2.3.5             pillar_1.8.1           backports_1.4.1       
+    ## [13] glue_1.6.2             chron_2.3-57           digest_0.6.29         
+    ## [16] XVector_0.36.0         rvest_1.0.3            snakecase_0.11.0      
+    ## [19] colorspace_2.0-3       htmltools_0.5.3        pkgconfig_2.0.3       
+    ## [22] broom_1.0.1            haven_2.5.1            zlibbioc_1.42.0       
+    ## [25] scales_1.2.1           tzdb_0.3.0             googledrive_2.0.0     
+    ## [28] generics_0.1.3         ellipsis_0.3.2         cachem_1.0.6          
+    ## [31] withr_2.5.0            cli_3.3.0              magrittr_2.0.3        
+    ## [34] crayon_1.5.1           readxl_1.4.1           memoise_2.0.1         
+    ## [37] evaluate_0.16          fs_1.5.2               fansi_1.0.3           
+    ## [40] xml2_1.3.3             tools_4.2.1            hms_1.1.2             
+    ## [43] gargle_1.2.0           lifecycle_1.0.1        munsell_0.5.0         
+    ## [46] reprex_2.0.2           compiler_4.2.1         rlang_1.0.4           
+    ## [49] RCurl_1.98-1.8         grid_4.2.1             rstudioapi_0.14       
+    ## [52] bitops_1.0-7           rmarkdown_2.16         gtable_0.3.0          
+    ## [55] DBI_1.1.3              R6_2.5.1               lubridate_1.8.0       
+    ## [58] knitr_1.40             fastmap_1.1.0          bit_4.0.4             
+    ## [61] utf8_1.2.2             stringi_1.7.8          Rcpp_1.0.9            
+    ## [64] vctrs_0.4.1            dbplyr_2.2.1           tidyselect_1.1.2      
+    ## [67] xfun_0.32
