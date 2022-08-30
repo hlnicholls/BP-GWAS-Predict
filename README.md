@@ -41,13 +41,11 @@ An R markdown can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/
 
 #### Whole GWAS data preprocessing
 
-Whole GWAS data was taken in order to annotate variant-level data and then take the most significant value per gene. The whole GWAS data was also used to identify variants with high p-values (>0.15) and no linkage disequilibrium measured with BP loci, provide an initial variants that could be identified as least likely to affect BP for further filtering. The further filtering involved selecting only variants not within 500kb+/- BP loci and not closely connected with known BP genes in protein-protein interaction (PPI) networks (completed in the ```5. PPI filtering insignificant genes.R``` script).
-
-The ```1. Filtering whole GWAS vairants.R``` code used to run this initial preprocessing step can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/1.%20Filtering%20whole%20GWAS%20variants.R)
+Whole GWAS data was taken in order to annotate variant-level data and then take the most significant value per gene. The whole GWAS data was also used to identify variants with high p-values (>0.15) and no linkage disequilibrium measured with BP loci, provide an initial variants that could be identified as least likely to affect BP for further filtering. The further filtering involved selecting only variants not within 500kb+/- BP loci and not closely connected with known BP genes in protein-protein interaction (PPI) networks.
 
 #### Variant-to-Gene annotation
 
-Variants are then annotated to genes using bedtools within unix using a bash script ```2. Bedtools_gene_annotation_whole_GWAS.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/2.%20Bedtools_gene_annotation_whole_GWAS.bash)
+Variants are then annotated to genes using bedtools within unix using a bash script ```Bedtools_Gene_Annotation.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/%20Bedtools_Gene_Annotation.bash)
 
 Bedtools gene annotation involved using the hg19/GRCh37 reference genome from Ensembl (release 92, Homo_sapiens.GRCh37.87) to annotate variants to their closest genes with a cut off of 50kb distance accepted to annotate a variant to that gene.
 
@@ -56,24 +54,19 @@ The annotated genes were further fitered by gene type, selecting only: protein-c
 #### Variant feature annotation and filtering
 Variants were annotated in unix using ANNVOAR (2018Apr16). 
 
-The ANNOVAR annotation was completed using ```3. ANNOVAR_whole_GWAS.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/3.%20Annovar_whole_GWAS.bash)
+The ANNOVAR annotation was completed using ```ANNOVAR_annotation.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/%20ANNOVAR_annotation.bash)
 
-Once ANNOVAR variant annotation was complete, the whole GWAS genes were filtered to only selected associated genes and genes found to be insignificant/least likely to affect BP (p-value >0.6, no linkage disequilibrium, not within 500kb+/- BP loci) - filtering out other genes in the whole GWAS data. The ```4. GWAS varant data filtering - all variants``` script for variant filtering can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/4.%20GWAS%20variant%20data%20filtering%20-%20all%20variants.R)
+Once ANNOVAR variant annotation was complete, the whole GWAS genes were filtered to only selected associated genes and genes found to be insignificant/least likely to affect BP (p-value >0.15, no linkage disequilibrium, not within 500kb+/- BP loci) - filtering out other genes in the whole GWAS data.
 
 #### Least likely BP gene filtering
 
-Genes identified as insignificant/least likely to affect BP in the first script (```1. Filtering whole GWAS vairants.R``` ) were further filtered by PPI distance to known BP genes, creating a final list of least likely genes to be scored at 0.1 on training. The ```5. PPI filtering insignificant genes.R``` script can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/5.%20PPI%20filtering%20insignificant%20genes.R)
+Genes identified as least likely to affect BP by p-value and linkage disequilibrium were further filtered by PPI distance to known BP genes, creating a final list of least likely genes to be scored at 0.1 on training.
 
 #### Variant-level features
-All variant-level annotations per gene had the gene's most significant variant-level value selected to represent that gene.
-
-The complete processing of all variant-level features (ANNVOAR, DeepSEA, UCSC, regulomeDB, and GWAS summary statistics) was performed in the ```6. Gene min max annotation selecion.R``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/6.%20Gene%20min%20max%20annotation%20selection.R), alongside individual scripts per feature found [here](https://github.com/hlnicholls/BP-GWAS-Predict/tree/main/Data%20preprocessing/7.%20Feature%20processing%20code). 
-
+All variant-level annotations per gene had the gene's most significant variant-level value selected to represent that gene, excluding for beta values in the GWAS summary statistics, which had the maximum absolute value taken across all three BP phenotypes (systolic, diastolic and pulse pressure) for each gene.
 
 #### Gene-level features
-GTEx foldchange data was the only gene-level annotation that required further processing before merging into a final file, requiring all GTEx tissues to be merged into one file (script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/tree/main/Data%20preprocessing/7.%20Feature%20processing%20code)).
-
-All other collected feaures required no further processing and could be directly merged into a final file in the ```8. Merging databases for training data.R ``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/8.%20Merging%20databases%20for%20training%20data.R)
+GTEx foldchange data was the only gene-level annotation that required further processing before merging into a final file, requiring all GTEx tissues to be merged into one file. All other collected feaures required no further processing and could be directly merged into a final file.
 
 #### Training data curation
 The final integrated file was then divided into training data and genes to be predicted by the trained model. This was done by identifying three gene groups that would make up the training data:
@@ -81,23 +74,23 @@ The final integrated file was then divided into training data and genes to be pr
 2. Genes that are probable to affect BP (genes with significance in BP publications in text-mining or had drug interactions known to have a BP side effect)
 3. Least likely genes (genes fitlered by distance to BP loci, high GWAS p-value, no linkage disequilibrum r2 measured, and no close PPIs with known BP genes)
 
-Training data division was also performed in the ```8. Merging databases for training data.R ``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/8.%20Merging%20databases%20for%20training%20data.R)
+
 
 ### 2. Machine learning:
 
 #### Feature pre-processing
 
-Features in the training data were removed if there were >25% missing or had >0.9 correlation in the ```EDA-training-data.ipynb``` script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/1.Training_Exploratory_Data_Analysis.ipynb)
+Features in the training data were removed if there were >25% missing or had >0.9 correlation in the ```EDA-training-data.ipynb``` script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/EDA-training-data.ipynb)
 
 Feature imputation was performed using random forest imputation followed by feature selection using BorutaShap in the ```All-Features-ML.ipynb``` script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/All-Features-ML.ipynb)
 
 #### Machine learning benchmarking
  
-Regression classification was used with all models benchmarked using repeated nested 5-fold nested cross validation, with each model undergoing Bayesian hyperparamter tuning (code for benchmarking can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/tree/main/Machine%20learning/Model%20Benchmarking)).  Median model performances across the repeated folds were then taken to assess model performance. The top performaning model using all features had its best model parameters applied in BorutaShap feature selection to select features.
+Regression classification was used with all models benchmarked using repeated nested 5-fold nested cross validation, with each model undergoing Bayesian hyperparamter tuning (code for benchmarking can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/Selected-Features-ML.ipynb)).  Median model performances across the repeated folds were then taken to assess model performance. The top performaning model using all features had its best model parameters applied in BorutaShap feature selection to select features.
 
 After feature selection, the models were then benchmarked against each other in repeated nested cross-validation again, with the top performing model used for further analysis. Final model benchmarking that selected the top performing model can be found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/Model%20Benchmarking/Selected-Features-ML.ipynb).
 
-The models benchmarked (extreme gradient boosting, catboost, lightgbm gradient boosting, random forest, extratrees, decision tree, k-nearest neighbors, LASSO and elasticnet logistic regrssion) were further compared with voting and stacking regressors using all other models and a bagging regressor using extreme gradient boosting within the ```Meta-estimators benchmarking.ipynb``` script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/Model%20Benchmarking/1-0.75-0.1_voting_stacking.ipynb).
+The models benchmarked (extreme gradient boosting, catboost, lightgbm gradient boosting, random forest, extratrees, decision tree, k-nearest neighbors, LASSO and elasticnet logistic regrssion) were further compared with voting and stacking regressors using all other models and a bagging regressor using extreme gradient boosting within the ```Meta-estimators benchmarking.ipynb``` script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/Meta-estimators%20benchmarking.ipynb).
 
 The trained top performing model was given non-training data genes to predict their likelihood of affecting BP within the ```XGB-Predictions.ipynb``` script found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Machine%20learning/XGB-Predictions.ipynb).
 
