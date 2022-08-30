@@ -45,7 +45,7 @@ Whole GWAS data was taken in order to annotate variant-level data and then take 
 
 #### Variant-to-Gene annotation
 
-Variants are then annotated to genes using bedtools within unix using a bash script ```Bedtools_Gene_Annotation.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/%20Bedtools_Gene_Annotation.bash)
+Variants are then annotated to genes using bedtools within unix using a bash script ```Bedtools_Gene_Annotation.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/Bedtools_Gene_Annotation.bash)
 
 Bedtools gene annotation involved using the hg19/GRCh37 reference genome from Ensembl (release 92, Homo_sapiens.GRCh37.87) to annotate variants to their closest genes with a cut off of 50kb distance accepted to annotate a variant to that gene.
 
@@ -54,7 +54,7 @@ The annotated genes were further fitered by gene type, selecting only: protein-c
 #### Variant feature annotation and filtering
 Variants were annotated in unix using ANNVOAR (2018Apr16). 
 
-The ANNOVAR annotation was completed using ```ANNOVAR_annotation.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/%20ANNOVAR_annotation.bash)
+The ANNOVAR annotation was completed using ```ANNOVAR_annotation.bash``` found [here](https://github.com/hlnicholls/BP-GWAS-Predict/blob/main/Data%20preprocessing/ANNOVAR_annotation.bash)
 
 Once ANNOVAR variant annotation was complete, the whole GWAS genes were filtered to only selected associated genes and genes found to be insignificant/least likely to affect BP (p-value >0.15, no linkage disequilibrium, not within 500kb+/- BP loci) - filtering out other genes in the whole GWAS data.
 
