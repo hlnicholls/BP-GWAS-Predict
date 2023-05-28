@@ -19,6 +19,8 @@ This machine learning method aims to apply an optimized model for identifying re
 
 # Installation
 
+Code ran with python version 3.8
+
 Data pre-processing was applied in R and machine learning was applied in Python via the Anaconda environment. The setup of the Python Anaconda environment can be installed by running in the Anaconda command prompt:
 
 ```conda env create -f environment.yml```

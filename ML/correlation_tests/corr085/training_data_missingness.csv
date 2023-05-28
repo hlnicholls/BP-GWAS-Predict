@@ -1,0 +1,120 @@
+,0,column_name,percent_missing
+BPlabel_encoded,0,BPlabel_encoded,0.0
+Gene_length,0,Gene_length,0.0
+wgEncodeBroadHmmHuvecHMM.count,0,wgEncodeBroadHmmHuvecHMM.count,0.0
+BPlabel,0,BPlabel,0.0
+IPA_BP_annotation,0,IPA_BP_annotation,0.0
+IPA_Activity,0,IPA_Activity,0.0
+GDI_Score,8,GDI_Score,2.7303754266211606
+betamax,16,betamax,5.460750853242321
+DNaseCluster_count,42,DNaseCluster_count,14.334470989761092
+Fallopian Tube_GTExTPM,43,Fallopian Tube_GTExTPM,14.675767918088738
+Nerve - Tibial_GTExTPM,43,Nerve - Tibial_GTExTPM,14.675767918088738
+Heart - Atrial Appendage_GTExTPM,43,Heart - Atrial Appendage_GTExTPM,14.675767918088738
+Heart - Left Ventricle_GTExTPM,43,Heart - Left Ventricle_GTExTPM,14.675767918088738
+Kidney - Cortex_GTExTPM,43,Kidney - Cortex_GTExTPM,14.675767918088738
+Kidney - Medulla_GTExTPM,43,Kidney - Medulla_GTExTPM,14.675767918088738
+Liver_GTExTPM,43,Liver_GTExTPM,14.675767918088738
+Lung_GTExTPM,43,Lung_GTExTPM,14.675767918088738
+Minor Salivary Gland_GTExTPM,43,Minor Salivary Gland_GTExTPM,14.675767918088738
+Muscle - Skeletal_GTExTPM,43,Muscle - Skeletal_GTExTPM,14.675767918088738
+Ovary_GTExTPM,43,Ovary_GTExTPM,14.675767918088738
+Skin - Sun Exposed (Lower leg)_GTExTPM,43,Skin - Sun Exposed (Lower leg)_GTExTPM,14.675767918088738
+Pituitary_GTExTPM,43,Pituitary_GTExTPM,14.675767918088738
+Prostate_GTExTPM,43,Prostate_GTExTPM,14.675767918088738
+Skin - Not Sun Exposed (Suprapubic)_GTExTPM,43,Skin - Not Sun Exposed (Suprapubic)_GTExTPM,14.675767918088738
+Esophagus - Muscularis_GTExTPM,43,Esophagus - Muscularis_GTExTPM,14.675767918088738
+Small Intestine - Terminal Ileum_GTExTPM,43,Small Intestine - Terminal Ileum_GTExTPM,14.675767918088738
+Spleen_GTExTPM,43,Spleen_GTExTPM,14.675767918088738
+Stomach_GTExTPM,43,Stomach_GTExTPM,14.675767918088738
+Testis_GTExTPM,43,Testis_GTExTPM,14.675767918088738
+Thyroid_GTExTPM,43,Thyroid_GTExTPM,14.675767918088738
+Uterus_GTExTPM,43,Uterus_GTExTPM,14.675767918088738
+Whole Blood_GTExTPM,43,Whole Blood_GTExTPM,14.675767918088738
+Pancreas_GTExTPM,43,Pancreas_GTExTPM,14.675767918088738
+Esophagus - Mucosa_GTExTPM,43,Esophagus - Mucosa_GTExTPM,14.675767918088738
+Vagina_GTExTPM,43,Vagina_GTExTPM,14.675767918088738
+Colon - Transverse_GTExTPM,43,Colon - Transverse_GTExTPM,14.675767918088738
+Adipose - Subcutaneous_GTExTPM,43,Adipose - Subcutaneous_GTExTPM,14.675767918088738
+Esophagus - Gastroesophageal Junction_GTExTPM,43,Esophagus - Gastroesophageal Junction_GTExTPM,14.675767918088738
+Adrenal Gland_GTExTPM,43,Adrenal Gland_GTExTPM,14.675767918088738
+Artery - Aorta_GTExTPM,43,Artery - Aorta_GTExTPM,14.675767918088738
+Artery - Coronary_GTExTPM,43,Artery - Coronary_GTExTPM,14.675767918088738
+Artery - Tibial_GTExTPM,43,Artery - Tibial_GTExTPM,14.675767918088738
+Bladder_GTExTPM,43,Bladder_GTExTPM,14.675767918088738
+Brain - Amygdala_GTExTPM,43,Brain - Amygdala_GTExTPM,14.675767918088738
+Brain - Anterior cingulate cortex (BA24)_GTExTPM,43,Brain - Anterior cingulate cortex (BA24)_GTExTPM,14.675767918088738
+Brain - Caudate (basal ganglia)_GTExTPM,43,Brain - Caudate (basal ganglia)_GTExTPM,14.675767918088738
+Brain - Cerebellar Hemisphere_GTExTPM,43,Brain - Cerebellar Hemisphere_GTExTPM,14.675767918088738
+Brain - Cerebellum_GTExTPM,43,Brain - Cerebellum_GTExTPM,14.675767918088738
+Brain - Cortex_GTExTPM,43,Brain - Cortex_GTExTPM,14.675767918088738
+Adipose - Visceral (Omentum)_GTExTPM,43,Adipose - Visceral (Omentum)_GTExTPM,14.675767918088738
+Brain - Hippocampus_GTExTPM,43,Brain - Hippocampus_GTExTPM,14.675767918088738
+Brain - Frontal Cortex (BA9)_GTExTPM,43,Brain - Frontal Cortex (BA9)_GTExTPM,14.675767918088738
+Cervix - Endocervix_GTExTPM,43,Cervix - Endocervix_GTExTPM,14.675767918088738
+Cervix - Ectocervix_GTExTPM,43,Cervix - Ectocervix_GTExTPM,14.675767918088738
+Cells - EBV-transformed lymphocytes_GTExTPM,43,Cells - EBV-transformed lymphocytes_GTExTPM,14.675767918088738
+Cells - Cultured fibroblasts_GTExTPM,43,Cells - Cultured fibroblasts_GTExTPM,14.675767918088738
+Colon - Sigmoid_GTExTPM,43,Colon - Sigmoid_GTExTPM,14.675767918088738
+Brain - Substantia nigra_GTExTPM,43,Brain - Substantia nigra_GTExTPM,14.675767918088738
+Brain - Spinal cord (cervical c-1)_GTExTPM,43,Brain - Spinal cord (cervical c-1)_GTExTPM,14.675767918088738
+Brain - Putamen (basal ganglia)_GTExTPM,43,Brain - Putamen (basal ganglia)_GTExTPM,14.675767918088738
+Brain - Hypothalamus_GTExTPM,43,Brain - Hypothalamus_GTExTPM,14.675767918088738
+Breast - Mammary Tissue_GTExTPM,43,Breast - Mammary Tissue_GTExTPM,14.675767918088738
+Brain - Nucleus accumbens (basal ganglia)_GTExTPM,43,Brain - Nucleus accumbens (basal ganglia)_GTExTPM,14.675767918088738
+CADD_RAW,49,CADD_RAW,16.72354948805461
+ppiscore_Exomiser,52,ppiscore_Exomiser,17.747440273037544
+humanscore_Exomiser,52,humanscore_Exomiser,17.747440273037544
+mousescore_Exomiser,52,mousescore_Exomiser,17.747440273037544
+ExomiserScore,52,ExomiserScore,17.747440273037544
+fishscore_Exomiser,52,fishscore_Exomiser,17.747440273037544
+HIPred,54,HIPred,18.43003412969283
+pLI_ExAC,54,pLI_ExAC,18.43003412969283
+SDI,59,SDI,20.13651877133106
+SignalValue_H3k4me1_median,78,SignalValue_H3k4me1_median,26.621160409556314
+H3k4me1_count,78,H3k4me1_count,26.621160409556314
+RVIS_Score,79,RVIS_Score,26.962457337883958
+logpval_gwascatalog,91,logpval_gwascatalog,31.0580204778157
+CNVs_ExAC,93,CNVs_ExAC,31.74061433447099
+DeepSEA_Functional_Significance,102,DeepSEA_Functional_Significance,34.81228668941979
+SignalValue_H3k4me3_median,103,SignalValue_H3k4me3_median,35.153583617747444
+H3k4me3_count,103,H3k4me3_count,35.153583617747444
+LoFtool,105,LoFtool,35.83617747440273
+EnhancerCount,114,EnhancerCount,38.907849829351534
+BPmed,114,BPmed,38.907849829351534
+SignalValue_H3k27Ac_median,117,SignalValue_H3k27Ac_median,39.93174061433447
+H3k27Ac_count,117,H3k27Ac_count,39.93174061433447
+GTEx_signif_sexbias,144,GTEx_signif_sexbias,49.14675767918089
+CpGcount,152,CpGcount,51.877133105802045
+mousecellsensitivity,179,mousecellsensitivity,61.092150170648466
+mousecellspecificity,179,mousecellspecificity,61.092150170648466
+humancellspecificity,179,humancellspecificity,61.092150170648466
+humancellsensitivity,179,humancellsensitivity,61.092150170648466
+ui_panglaoDB,179,ui_panglaoDB,61.092150170648466
+SideeffectFreq,183,SideeffectFreq,62.45733788395904
+Sideeffectseverity,183,Sideeffectseverity,62.45733788395904
+PolyPhen,185,PolyPhen,63.13993174061434
+REVEL.max,214,REVEL.max,73.03754266211604
+GERP_Rankscore,215,GERP_Rankscore,73.37883959044369
+integrated_fitCons_rankscore,215,integrated_fitCons_rankscore,73.37883959044369
+fathmm-MKL_coding_score,215,fathmm-MKL_coding_score,73.37883959044369
+GenoCanyon_rankscore,215,GenoCanyon_rankscore,73.37883959044369
+DANN_score,215,DANN_score,73.37883959044369
+REVEL_score,216,REVEL_score,73.72013651877133
+MetaSVM_rankscore,216,MetaSVM_rankscore,73.72013651877133
+MetaLR_rankscore,216,MetaLR_rankscore,73.72013651877133
+M-CAP_rankscore,216,M-CAP_rankscore,73.72013651877133
+Eigen-raw_coding_rankscore,216,Eigen-raw_coding_rankscore,73.72013651877133
+MutationAssessor_rankscore,220,MutationAssessor_rankscore,75.08532423208192
+MetaSVM_rankscore.max,222,MetaSVM_rankscore.max,75.7679180887372
+MetaLR_rankscore.max,222,MetaLR_rankscore.max,75.7679180887372
+PharmGKB_Score,224,PharmGKB_Score,76.45051194539249
+ExAc_constraint_obs_exp,237,ExAc_constraint_obs_exp,80.88737201365188
+Rank,247,Rank,84.30034129692832
+O_GlcNAc_Score,265,O_GlcNAc_Score,90.44368600682594
+EMS_Max,277,EMS_Max,94.53924914675768
+Mechanism,284,Mechanism,96.9283276450512
+Others,286,Others,97.61092150170649
+MCAP.max,293,MCAP.max,100.0
+Ratmodel_Gene,293,Ratmodel_Gene,100.0
+MGI_Gene,293,MGI_Gene,100.0
